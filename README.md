@@ -266,18 +266,23 @@ Nothing here reaches npm at run time.
 ```bash
 npm run dev          # local server on :8787, secrets from .dev.vars
 npm run typecheck
-npm run build        # bundle the Worker into dist/ without deploying
 ```
-
-CI runs on every push and pull request: exact-pin check, `npm ci`,
-typecheck, validation of both `apis.json` and `example.apis.json`, the
-bundle build, and an audit of runtime dependencies. It never deploys.
 
 `.dev.vars` is gitignored. Smoke-test a running server:
 
 ```bash
 curl -s localhost:8787/mcp -H "authorization: Bearer $TOKEN" -H "content-type: application/json" -H "accept: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_apis","arguments":{}}}'
 ```
+
+### Build and CI
+
+`npm run build` bundles the Worker into `dist/` without deploying, which
+is the quickest way to see that it still builds.
+
+CI runs on every push and pull request: exact-pin check, `npm ci`,
+typecheck, validation of both `apis.json` and `example.apis.json`, the
+bundle build, the tests when present, and an audit of runtime
+dependencies. It never deploys.
 
 ### What the validator checks
 
