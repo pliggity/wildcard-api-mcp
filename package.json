@@ -1,0 +1,26 @@
+{
+  "name": "wildcard-api-mcp",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "npm run validate && wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "gen-token": "node --input-type=module -e \"import {randomBytes} from 'node:crypto'; console.log(randomBytes(24).toString('base64url'))\"",
+    "secret": "wrangler secret",
+    "check": "node scripts/check.mjs",
+    "validate": "node scripts/validate-apis.mjs",
+    "check-drift": "node scripts/check-drift.mjs",
+    "setup": "node scripts/setup.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260829.1",
+    "typescript": "5.9.3",
+    "wrangler": "4.127.1"
+  },
+  "dependencies": {
+    "@cloudflare/workers-oauth-provider": "0.10.3"
+  },
+  "description": "One self-hosted MCP server that fronts any REST API, with a fixed four-tool surface so adding an API costs no context.",
+  "license": "MIT"
+}

@@ -1,0 +1,254 @@
+# wildcard-api-mcp
+
+One MCP server that fronts any REST API, reachable from Claude Code, Cowork and
+claude.ai at the same time. Bring your own APIs — none are bundled.
+
+It exposes **four tools, permanently** — not one tool per endpoint:
+
+| tool | what it does |
+|---|---|
+| `list_apis` | what's available, whether writes are on, whether the credential is set |
+| `describe_api` | endpoints of one API: paths, query params, body shapes, gotchas |
+| `call_api` | make the request; the server attaches credentials |
+| `check_auth` | prove each credential still works, to separate 401s from bad requests |
+
+APIs are **data**, not code. Adding one means writing a manifest in `apis.json` —
+no TypeScript, no new tool. Tool count never changes, so context cost stays flat
+no matter how many APIs are wired up.
+
+## Setup
+
+```bash
+npm ci
+npx wrangler login     # one time, your own Cloudflare account
+npm run setup
+```
+
+`npm run setup` creates the KV namespace, generates a server token and an
+encryption key, deploys, and prints your Worker's URL. It is safe to re-run.
+
+At this point the server runs with zero APIs configured. See "Adding an API"
+below — every API, including the first one, is added the same way.
+
+## Connecting clients
+
+**Claude Code** — a header works here:
+
+```bash
+claude mcp add --transport http wildcard https://<your-worker>.workers.dev/mcp --header "Authorization: Bearer <YOUR_TOKEN>"
+```
+
+**Cowork / claude.ai** — the custom connector form has no place to put a header,
+so the token goes in the path instead:
+
+```
+https://<your-worker>.workers.dev/mcp/<YOUR_TOKEN>
+```
+
+Both forms hit the same server and the same constant-time check. The path form
+puts the secret in a URL, which is marginally leakier (URLs turn up in logs and
+history) — rotate it by setting the token secret again and updating the
+connector.
+
+## Adding an API
+
+APIs live in **`apis.json`**. Adding one is an edit to that file and a deploy:
+
+```json
+{
+  "id": "example",
+  "description": "One line: what this API is for.",
+  "baseUrl": "https://api.example.com/v1",
+  "auth": { "type": "bearer", "secret": "EXAMPLE_TOKEN" },
+  "docs": "https://example.com/docs",
+  "write": false,
+  "probe": { "path": "/ping" },
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/things",
+      "summary": "List things.",
+      "query": ["limit", "cursor"],
+      "notes": "Any gotcha the model needs: required params, date formats, pagination."
+    }
+  ]
+}
+```
+
+Then set the secret the manifest names, and deploy:
+
+```bash
+npm run secret -- put EXAMPLE_TOKEN
+npm run deploy
+```
+
+`npm run deploy` validates `apis.json` first and refuses to deploy a broken one.
+Run `npm run validate` on its own while editing.
+
+`example.apis.json` holds ready-made manifests for Google Calendar, Tasks,
+Sheets, Drive and Gmail, with deny rules for deletes, sharing and sending.
+Copy the entries you want into `apis.json`. They use a plain
+`GOOGLE_ACCESS_TOKEN` bearer secret, which Google expires after an hour; for
+lasting access, add a token module as described under "Who can use a specific
+upstream API."
+
+### Credential types
+
+Four declarative shapes cover most APIs — no code required for any of them:
+
+| `auth` | effect |
+|---|---|
+| `{ "type": "bearer", "secret": "X" }` | `Authorization: Bearer <X>` |
+| `{ "type": "header", "secret": "X", "header": "x-api-key" }` | that header, optional `prefix` |
+| `{ "type": "query", "secret": "X", "param": "apikey" }` | appended to the query string |
+| `{ "type": "basic", "secret": "X" }` | HTTP Basic; the secret holds `user:password` |
+| `"none"` | no credential |
+
+If an API needs something these four don't cover — a credential embedded in a
+URL, a signature scheme, a custom header pair — that's the one case that still
+needs a few lines of code in `src/auth.ts`, following the existing shapes as a
+template.
+
+### Fields worth getting right
+
+- **`probe`** — the cheap read `check_auth` uses to prove the credential works.
+  Add `expectStatus` when the natural probe is not a 200.
+- **`write`** — must be stated explicitly; `false` means GET only.
+- **`deny`** — an inline array of `{ method, path, reason }`, or a named preset
+  from `src/deny-presets.ts` if you want to share one rule set across several
+  manifests for the same provider.
+- **`defaultQuery`** — pins anything the upstream would otherwise choose, such as
+  an API version, so a server-side default cannot silently change the response
+  shape.
+- **`notes`** — the only thing standing between the model and a guessed parameter
+  name. Note required params with no default, cheap-vs-expensive response
+  formats, silent caps, and date formats.
+
+## Guardrails
+
+Deliberate, and all in one place:
+
+- **Host allowlist.** `call_api` can only reach hosts that appear in a manifest's
+  base URL. `..` segments and protocol-relative paths are rejected, and the final
+  URL is re-checked against the base before the request goes out. An MCP tool
+  that accepts an arbitrary URL is an SSRF hole and a data-exfiltration path.
+- **Read-only by default.** A manifest must set `write: true` for anything other
+  than GET.
+- **Deny rules** block specific method + path globs even on write-enabled APIs —
+  the place to put "never delete," "never send," "never grant access" for a
+  given provider.
+- **Response truncation** at 30k chars by default, 200k ceiling, with the real
+  length reported so the caller knows to narrow the query.
+- **Credentials never enter the model's context.** They are Worker secrets,
+  attached during the fetch. `call_api` has no token argument.
+
+The deny rules matter beyond typos: API responses are untrusted input, and a
+calendar invite or email body can carry text aimed at the model. A deny rule on
+send/delete/share endpoints means the worst case of a successful injection is a
+bad draft, not a sent message or a granted permission.
+
+## Authentication
+
+Two layers, and they solve different problems — don't conflate them.
+
+**Who can use this server (server-side login).** The Worker is its own OAuth
+2.1 authorization server, built on `@cloudflare/workers-oauth-provider`. Clients
+(Claude Code, claude.ai) authenticate against *your* server, not against
+whatever upstream API they end up calling. Out of the box this federates to
+whichever identity provider you wire into `src/oauth.ts` — **any standard
+OAuth2/OIDC provider works**: Google, Auth0, GitHub, Okta, your own IdP. The
+server only needs, from whichever provider you pick:
+
+- an authorize URL and a token URL,
+- a client ID and secret,
+- one callback route that exchanges a code for tokens,
+- somewhere to persist the result (Workers KV here).
+
+That's the entire interface `src/oauth.ts` expects, and all of it is
+configuration: `OAUTH_AUTHORIZE_URL`, `OAUTH_TOKEN_URL`, `OAUTH_CLIENT_ID` and
+`OAUTH_CLIENT_SECRET` as Worker secrets, with your Worker's `/callback` as the
+redirect URI. `npm run setup` asks for them. Swapping providers means changing
+those values, not code. The approval screen, the pending-request bookkeeping in
+KV, and the account pin are provider-agnostic.
+
+The pin is `OAUTH_ALLOWED_USERS`, a comma-separated list of accounts, and login
+is refused until it is set — otherwise anyone with an account at your provider
+could connect. The account is read from the OIDC `id_token` (claim
+`OAUTH_USER_CLAIM`, default `email`); for a provider without one, such as
+GitHub, set `OAUTH_USERINFO_URL` and the claim to read from it (`login`).
+`OAUTH_SCOPES` defaults to `openid email`, and `OAUTH_AUTHORIZE_PARAMS` passes
+anything provider-specific through as a query string.
+
+This README deliberately doesn't walk through any one provider's console — that
+setup is on each provider's own site and changes independently of this project.
+
+A fallback **shared-token** mode is also always available: a long random
+secret accepted as a Bearer header or a trailing path segment, for the case
+where you don't want to stand up an OAuth login at all (single user, trusted
+network). It short-circuits the OAuth flow entirely.
+
+**Who can use a specific upstream API (per-API credentials).** Independent of
+the above. Most APIs use a static key — see "Credential types." Some APIs
+(anything requiring per-user delegated access, like a mail or calendar
+provider) instead need their own OAuth dance with *that provider*, separate
+from your server's login. That dance always happens against whatever service
+owns the data — there's no way to route around it by picking a different
+identity provider for step one. If you add an API like that, it gets a new
+string `auth` value in `src/types.ts` and its own module beside `src/auth.ts`:
+fetch and cache an access token, refresh it, and store the refresh token
+encrypted in KV with `src/crypto.ts`.
+
+## Credentials at rest
+
+Worker secrets hold every static credential. They are write-only from outside:
+their names can be listed, their values cannot be read back, so `wrangler secret
+list` is safe to run and to paste.
+
+KV is different — its values *can* be read, by the dashboard, by `wrangler kv key
+get`, or by any API token scoped to the namespace. A refresh token that the
+Worker has to write to itself (because a Worker cannot write its own secrets)
+has nowhere else to live, so it goes in KV encrypted with AES-GCM under a key
+held in a Worker secret (`src/crypto.ts`). Reading the KV namespace alone
+yields ciphertext.
+
+This does not defend against a compromised Cloudflare account — anyone who can
+deploy code can read the secret too. It closes the narrower gap where a
+read-only, KV-scoped API token would otherwise yield a live upstream credential
+with none of this server's deny rules applying.
+
+## Supply chain
+
+Nothing here reaches npm at run time.
+
+- **No `npx` anywhere.** `npx` fetches from the registry when it can't resolve a
+  binary locally, which is how you end up running a package you never chose.
+  Every command here goes through `npm run`, which resolves binaries from
+  `node_modules/.bin` only.
+- **Exact versions, no ranges.** `package.json` pins exact versions, and
+  `.npmrc` sets `save-exact=true` so future installs stay pinned.
+- **Install with `npm ci`, not `npm install`.** `npm ci` installs precisely what
+  `package-lock.json` specifies, with integrity hashes, and fails loudly if the
+  lockfile and `package.json` disagree.
+- **Install scripts are gated.** npm blocks package postinstall scripts by
+  default and names what it blocked; approve them deliberately with `npm
+  approve-scripts`.
+
+## Development
+
+```bash
+npm run dev          # local server on :8787, secrets from .dev.vars
+npm run typecheck
+```
+
+`.dev.vars` is gitignored. Smoke-test a running server:
+
+```bash
+curl -s localhost:8787/mcp -H "authorization: Bearer $TOKEN" -H "content-type: application/json" -H "accept: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_apis","arguments":{}}}'
+```
+
+### What the validator checks
+
+Ids are unique and well-formed, `baseUrl` parses and has no trailing slash,
+`write` is explicit, auth types carry their required fields, deny presets
+exist, methods are uppercase and real, and every endpoint has a path and
+summary. Errors name the API and field.

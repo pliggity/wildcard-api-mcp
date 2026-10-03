@@ -1,0 +1,619 @@
+[
+  {
+    "id": "google_calendar",
+    "description": "Google Calendar v3 — events, calendars, free/busy.",
+    "baseUrl": "https://www.googleapis.com/calendar/v3",
+    "auth": {
+      "type": "bearer",
+      "secret": "GOOGLE_ACCESS_TOKEN"
+    },
+    "docs": "https://developers.google.com/calendar/api/v3/reference",
+    "write": true,
+    "deny": [
+      {
+        "method": "DELETE",
+        "path": "/**",
+        "reason": "Deletes are disabled on this server. Do it in the Google UI, or remove this rule."
+      }
+    ],
+    "probe": {
+      "path": "/users/me/calendarList",
+      "query": {
+        "maxResults": 1
+      }
+    },
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/users/me/calendarList",
+        "summary": "List the calendars on the user's list, with their ids.",
+        "query": [
+          "maxResults",
+          "pageToken",
+          "minAccessRole",
+          "showHidden",
+          "showDeleted"
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/calendars/{calendarId}/events",
+        "summary": "List or search events. Use calendarId 'primary' for the main calendar.",
+        "query": [
+          "timeMin",
+          "timeMax",
+          "q",
+          "singleEvents",
+          "orderBy",
+          "maxResults",
+          "pageToken",
+          "updatedMin",
+          "showDeleted",
+          "timeZone"
+        ],
+        "notes": "Pass singleEvents=true and orderBy=startTime to expand recurring events into instances. timeMin/timeMax are RFC3339, e.g. 2026-09-01T00:00:00Z."
+      },
+      {
+        "method": "GET",
+        "path": "/calendars/{calendarId}/events/{eventId}",
+        "summary": "Fetch one event in full."
+      },
+      {
+        "method": "POST",
+        "path": "/calendars/{calendarId}/events",
+        "summary": "Create an event.",
+        "query": [
+          "sendUpdates",
+          "conferenceDataVersion"
+        ],
+        "body": "{ summary, description?, location?, start: {dateTime|date, timeZone?}, end: {...}, attendees?: [{email}], recurrence?: [RRULE] }",
+        "notes": "sendUpdates defaults to none, so attendees are not emailed unless you ask for it."
+      },
+      {
+        "method": "POST",
+        "path": "/calendars/{calendarId}/events/quickAdd",
+        "summary": "Create an event from a natural-language string.",
+        "query": [
+          "text",
+          "sendUpdates"
+        ],
+        "notes": "e.g. text=Dentist Thursday 3pm. Fastest path for a simple event."
+      },
+      {
+        "method": "PATCH",
+        "path": "/calendars/{calendarId}/events/{eventId}",
+        "summary": "Update selected fields of an event.",
+        "query": [
+          "sendUpdates"
+        ],
+        "body": "Partial Event — only the fields being changed."
+      },
+      {
+        "method": "POST",
+        "path": "/freeBusy",
+        "summary": "Query busy blocks across several calendars at once.",
+        "body": "{ timeMin, timeMax, items: [{ id: \"calendar-id\" }] }"
+      },
+      {
+        "method": "GET",
+        "path": "/calendars/{calendarId}",
+        "summary": "Calendar metadata, including its time zone."
+      },
+      {
+        "method": "GET",
+        "path": "/colors",
+        "summary": "The colorId palette used by events and calendars."
+      }
+    ]
+  },
+  {
+    "id": "google_tasks",
+    "description": "Google Tasks v1 — task lists and tasks.",
+    "baseUrl": "https://tasks.googleapis.com/tasks/v1",
+    "auth": {
+      "type": "bearer",
+      "secret": "GOOGLE_ACCESS_TOKEN"
+    },
+    "docs": "https://developers.google.com/tasks/reference/rest",
+    "write": true,
+    "deny": [
+      {
+        "method": "DELETE",
+        "path": "/**",
+        "reason": "Deletes are disabled on this server. Do it in the Google UI, or remove this rule."
+      }
+    ],
+    "probe": {
+      "path": "/users/@me/lists",
+      "query": {
+        "maxResults": 1
+      }
+    },
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/users/@me/lists",
+        "summary": "List task lists with their ids.",
+        "query": [
+          "maxResults",
+          "pageToken"
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/users/@me/lists",
+        "summary": "Create a task list.",
+        "body": "{ title }"
+      },
+      {
+        "method": "GET",
+        "path": "/lists/{tasklist}/tasks",
+        "summary": "List tasks in a list.",
+        "query": [
+          "showCompleted",
+          "showHidden",
+          "showDeleted",
+          "dueMin",
+          "dueMax",
+          "completedMin",
+          "completedMax",
+          "maxResults",
+          "pageToken",
+          "updatedMin"
+        ],
+        "notes": "Completed tasks are hidden unless showCompleted=true and showHidden=true."
+      },
+      {
+        "method": "GET",
+        "path": "/lists/{tasklist}/tasks/{task}",
+        "summary": "Fetch one task."
+      },
+      {
+        "method": "POST",
+        "path": "/lists/{tasklist}/tasks",
+        "summary": "Create a task.",
+        "query": [
+          "parent",
+          "previous"
+        ],
+        "body": "{ title, notes?, due?: RFC3339, status?: \"needsAction\"|\"completed\" }",
+        "notes": "due carries a date only — Tasks discards the time component. parent nests it under another task."
+      },
+      {
+        "method": "PATCH",
+        "path": "/lists/{tasklist}/tasks/{task}",
+        "summary": "Update a task; set status to completed to check it off.",
+        "body": "Partial Task."
+      },
+      {
+        "method": "POST",
+        "path": "/lists/{tasklist}/tasks/{task}/move",
+        "summary": "Reposition a task.",
+        "query": [
+          "parent",
+          "previous"
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/lists/{tasklist}/clear",
+        "summary": "Hide all completed tasks in a list."
+      }
+    ]
+  },
+  {
+    "id": "google_sheets",
+    "description": "Google Sheets v4 — read and write cell ranges, create and restructure spreadsheets.",
+    "baseUrl": "https://sheets.googleapis.com/v4",
+    "auth": {
+      "type": "bearer",
+      "secret": "GOOGLE_ACCESS_TOKEN"
+    },
+    "docs": "https://developers.google.com/sheets/api/reference/rest",
+    "write": true,
+    "deny": [
+      {
+        "method": "DELETE",
+        "path": "/**",
+        "reason": "Deletes are disabled on this server. Do it in the Google UI, or remove this rule."
+      }
+    ],
+    "probe": {
+      "path": "/spreadsheets/probe-not-a-real-id",
+      "expectStatus": 404
+    },
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/spreadsheets/{spreadsheetId}",
+        "summary": "Spreadsheet metadata: sheet names, ids, dimensions.",
+        "query": [
+          "ranges",
+          "includeGridData",
+          "fields"
+        ],
+        "notes": "Start here to learn the tab names before reading values."
+      },
+      {
+        "method": "GET",
+        "path": "/spreadsheets/{spreadsheetId}/values/{range}",
+        "summary": "Read one A1 range, e.g. /values/Sheet1!A1:D100.",
+        "query": [
+          "majorDimension",
+          "valueRenderOption",
+          "dateTimeRenderOption"
+        ],
+        "notes": "A tab name containing spaces must be quoted and URL-encoded: 'My%20Sheet'!A1:D10."
+      },
+      {
+        "method": "GET",
+        "path": "/spreadsheets/{spreadsheetId}/values:batchGet",
+        "summary": "Read several ranges in one call.",
+        "query": [
+          "ranges",
+          "majorDimension",
+          "valueRenderOption"
+        ]
+      },
+      {
+        "method": "PUT",
+        "path": "/spreadsheets/{spreadsheetId}/values/{range}",
+        "summary": "Overwrite a range.",
+        "query": [
+          "valueInputOption",
+          "includeValuesInResponse"
+        ],
+        "body": "{ values: [[cell, cell], [cell, cell]] }",
+        "notes": "valueInputOption is required — USER_ENTERED parses formulas and dates, RAW stores strings verbatim."
+      },
+      {
+        "method": "POST",
+        "path": "/spreadsheets/{spreadsheetId}/values/{range}:append",
+        "summary": "Append rows after the last row of a range.",
+        "query": [
+          "valueInputOption",
+          "insertDataOption"
+        ],
+        "body": "{ values: [[...]] }"
+      },
+      {
+        "method": "POST",
+        "path": "/spreadsheets/{spreadsheetId}/values:batchUpdate",
+        "summary": "Write several ranges in one call.",
+        "body": "{ valueInputOption, data: [{ range, values }] }"
+      },
+      {
+        "method": "POST",
+        "path": "/spreadsheets/{spreadsheetId}:batchUpdate",
+        "summary": "Structural changes: add or delete sheets, formatting, filters, conditional formats.",
+        "body": "{ requests: [ { addSheet | repeatCell | updateSheetProperties | ... } ] }"
+      },
+      {
+        "method": "POST",
+        "path": "/spreadsheets",
+        "summary": "Create a spreadsheet.",
+        "body": "{ properties: { title }, sheets?: [...] }"
+      },
+      {
+        "method": "POST",
+        "path": "/spreadsheets/{spreadsheetId}/values/{range}:clear",
+        "summary": "Clear the values in a range, keeping formatting."
+      }
+    ]
+  },
+  {
+    "id": "google_drive",
+    "description": "Google Drive v3 — full query syntax, permissions, revisions, shared drives, change feed.",
+    "baseUrl": "https://www.googleapis.com/drive/v3",
+    "auth": {
+      "type": "bearer",
+      "secret": "GOOGLE_ACCESS_TOKEN"
+    },
+    "docs": "https://developers.google.com/drive/api/reference/rest/v3",
+    "write": true,
+    "deny": [
+      {
+        "method": "DELETE",
+        "path": "/**",
+        "reason": "Deletes are disabled on this server. Do it in the Google UI, or remove this rule."
+      },
+      {
+        "method": "POST",
+        "path": "/files/*/permissions",
+        "reason": "Granting access to a file is outward-facing; share it from the Drive UI yourself."
+      }
+    ],
+    "probe": {
+      "path": "/about",
+      "query": {
+        "fields": "user"
+      }
+    },
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/files",
+        "summary": "Search files with Drive query syntax.",
+        "query": [
+          "q",
+          "pageSize",
+          "pageToken",
+          "orderBy",
+          "fields",
+          "spaces",
+          "corpora",
+          "driveId",
+          "includeItemsFromAllDrives",
+          "supportsAllDrives"
+        ],
+        "notes": "q examples: \"name contains 'budget'\", \"mimeType='application/vnd.google-apps.spreadsheet'\", \"modifiedTime > '2026-01-01T00:00:00'\", \"'me' in owners\", \"trashed=false\". Ask for fields=files(id,name,mimeType,modifiedTime,owners) — the default field set is sparse."
+      },
+      {
+        "method": "GET",
+        "path": "/files/{fileId}",
+        "summary": "File metadata, or the bytes with alt=media.",
+        "query": [
+          "fields",
+          "alt",
+          "supportsAllDrives",
+          "acknowledgeAbuse"
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/files/{fileId}/export",
+        "summary": "Export a Google-native doc to another format.",
+        "query": [
+          "mimeType"
+        ],
+        "notes": "e.g. mimeType=text/csv for a sheet, text/plain or application/pdf for a doc."
+      },
+      {
+        "method": "POST",
+        "path": "/files",
+        "summary": "Create a file or folder (metadata only; no upload through this server).",
+        "body": "{ name, mimeType, parents?: [folderId] }"
+      },
+      {
+        "method": "PATCH",
+        "path": "/files/{fileId}",
+        "summary": "Rename, move, star, or trash a file.",
+        "query": [
+          "addParents",
+          "removeParents",
+          "supportsAllDrives"
+        ],
+        "body": "{ name?, trashed?, starred?, description?, appProperties? }"
+      },
+      {
+        "method": "POST",
+        "path": "/files/{fileId}/copy",
+        "summary": "Copy a file.",
+        "body": "{ name?, parents?: [folderId] }"
+      },
+      {
+        "method": "GET",
+        "path": "/files/{fileId}/permissions",
+        "summary": "Who has access to a file.",
+        "query": [
+          "fields",
+          "supportsAllDrives"
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/files/{fileId}/revisions",
+        "summary": "Revision history of a file.",
+        "query": [
+          "fields",
+          "pageSize"
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/drives",
+        "summary": "List shared drives.",
+        "query": [
+          "pageSize",
+          "pageToken",
+          "q"
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/changes/startPageToken",
+        "summary": "Token marking 'now' in the change feed."
+      },
+      {
+        "method": "GET",
+        "path": "/changes",
+        "summary": "What changed since a page token.",
+        "query": [
+          "pageToken",
+          "pageSize",
+          "includeItemsFromAllDrives",
+          "supportsAllDrives",
+          "fields"
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/about",
+        "summary": "Account info and storage quota.",
+        "query": [
+          "fields"
+        ],
+        "notes": "fields is required, e.g. fields=storageQuota,user."
+      }
+    ]
+  },
+  {
+    "id": "google_gmail",
+    "description": "Gmail v1 — filters, labels, batch modify, history sync, drafts.",
+    "baseUrl": "https://gmail.googleapis.com/gmail/v1",
+    "auth": {
+      "type": "bearer",
+      "secret": "GOOGLE_ACCESS_TOKEN"
+    },
+    "docs": "https://developers.google.com/gmail/api/reference/rest",
+    "write": true,
+    "deny": [
+      {
+        "method": "DELETE",
+        "path": "/**",
+        "reason": "Deletes are disabled on this server. Do it in the Google UI, or remove this rule."
+      },
+      {
+        "method": "POST",
+        "path": "/users/*/messages/send",
+        "reason": "Sending mail is disabled. Create a draft instead and send it from Gmail."
+      },
+      {
+        "method": "POST",
+        "path": "/users/*/drafts/send",
+        "reason": "Sending mail is disabled. Review the draft in Gmail and send it there."
+      },
+      {
+        "method": "POST",
+        "path": "/users/*/settings/forwardingAddresses",
+        "reason": "Forwarding is a standing rule that survives this session; set it up in Gmail settings yourself."
+      },
+      {
+        "method": "*",
+        "path": "/users/*/settings/sendAs/**",
+        "reason": "Send-as identities affect outbound mail; change them in Gmail settings yourself."
+      }
+    ],
+    "probe": {
+      "path": "/users/me/profile"
+    },
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/users/me/profile",
+        "summary": "Address, message count, current historyId."
+      },
+      {
+        "method": "GET",
+        "path": "/users/me/messages",
+        "summary": "Search messages; returns ids only.",
+        "query": [
+          "q",
+          "labelIds",
+          "maxResults",
+          "pageToken",
+          "includeSpamTrash"
+        ],
+        "notes": "q takes the Gmail search language: 'category:promotions older_than:30d', 'from:x@y.com has:attachment'."
+      },
+      {
+        "method": "GET",
+        "path": "/users/me/messages/{id}",
+        "summary": "Fetch a message.",
+        "query": [
+          "format",
+          "metadataHeaders"
+        ],
+        "notes": "format=metadata with metadataHeaders=Subject&metadataHeaders=From is far cheaper than format=full."
+      },
+      {
+        "method": "POST",
+        "path": "/users/me/messages/batchModify",
+        "summary": "Add or remove labels on up to 1000 messages in one call.",
+        "body": "{ ids: [messageId], addLabelIds?: [id], removeLabelIds?: [id] }",
+        "notes": "The efficient way to bulk-label. Returns 204 with no body on success."
+      },
+      {
+        "method": "POST",
+        "path": "/users/me/messages/{id}/modify",
+        "summary": "Change labels on one message.",
+        "body": "{ addLabelIds?: [], removeLabelIds?: [] }"
+      },
+      {
+        "method": "GET",
+        "path": "/users/me/threads",
+        "summary": "Search threads.",
+        "query": [
+          "q",
+          "labelIds",
+          "maxResults",
+          "pageToken",
+          "includeSpamTrash"
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/users/me/threads/{id}",
+        "summary": "Fetch a thread and its messages.",
+        "query": [
+          "format",
+          "metadataHeaders"
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/users/me/labels",
+        "summary": "All labels with their ids and message counts."
+      },
+      {
+        "method": "POST",
+        "path": "/users/me/labels",
+        "summary": "Create a label.",
+        "body": "{ name, labelListVisibility?, messageListVisibility?, color?: { textColor, backgroundColor } }"
+      },
+      {
+        "method": "PATCH",
+        "path": "/users/me/labels/{id}",
+        "summary": "Rename or recolor a label.",
+        "body": "Partial Label."
+      },
+      {
+        "method": "GET",
+        "path": "/users/me/settings/filters",
+        "summary": "List server-side filters."
+      },
+      {
+        "method": "POST",
+        "path": "/users/me/settings/filters",
+        "summary": "Create a server-side filter.",
+        "body": "{ criteria: { from?, to?, subject?, query?, hasAttachment? }, action: { addLabelIds?, removeLabelIds?, forward? } }",
+        "notes": "Standing rule — it keeps acting on new mail after the session ends. Confirm with the user before creating one."
+      },
+      {
+        "method": "GET",
+        "path": "/users/me/history",
+        "summary": "Incremental sync of everything that changed since a historyId.",
+        "query": [
+          "startHistoryId",
+          "historyTypes",
+          "labelId",
+          "maxResults",
+          "pageToken"
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/users/me/drafts",
+        "summary": "Create a draft.",
+        "body": "{ message: { raw: base64url(RFC822), threadId? } }",
+        "notes": "raw is base64url of a full RFC 5322 message. Drafts are safe: sending is blocked."
+      },
+      {
+        "method": "PUT",
+        "path": "/users/me/drafts/{id}",
+        "summary": "Replace a draft.",
+        "body": "{ message: { raw } }"
+      },
+      {
+        "method": "GET",
+        "path": "/users/me/drafts",
+        "summary": "List drafts.",
+        "query": [
+          "q",
+          "maxResults",
+          "pageToken"
+        ]
+      }
+    ]
+  }
+]

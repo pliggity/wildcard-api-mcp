@@ -1,0 +1,6 @@
+{
+  "workerUrl": "https://your-worker.your-subdomain.workers.dev",
+  "opItems": {
+    "server": "optional 1Password item title"
+  }
+}
