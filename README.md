@@ -3,7 +3,7 @@
 One MCP server that fronts any REST API, reachable from Claude Code, Cowork and
 claude.ai at the same time. Bring your own APIs — none are bundled.
 
-It exposes **four tools, permanently** — not one tool per endpoint:
+It exposes **eight tools, permanently** — not one tool per endpoint:
 
 | tool | what it does |
 |---|---|
@@ -11,10 +11,14 @@ It exposes **four tools, permanently** — not one tool per endpoint:
 | `describe_api` | endpoints of one API: paths, query params, body shapes, gotchas |
 | `call_api` | make the request; the server attaches credentials |
 | `check_auth` | prove each credential still works, to separate 401s from bad requests |
+| `get_config` | every API the server knows, enabled or not, with auth type, credential presence and guardrails |
+| `set_config` | switch APIs off or back on without a deploy |
+| `add_api` | register a new API live, from a manifest, without a deploy |
+| `remove_api` | delete an API that was added with `add_api` |
 
-APIs are **data**, not code. Adding one means writing a manifest in `apis.json` —
-no TypeScript, no new tool. Tool count never changes, so context cost stays flat
-no matter how many APIs are wired up.
+APIs are **data**, not code. Adding one means writing a manifest — in
+`apis.json`, or live through `add_api` — no TypeScript, no new tool. Tool count
+never changes, so context cost stays flat no matter how many APIs are wired up.
 
 ## Setup
 
@@ -91,6 +95,30 @@ Copy the entries you want into `apis.json`. They use a plain
 `GOOGLE_ACCESS_TOKEN` bearer secret, which Google expires after an hour; for
 lasting access, add a token module as described under "Who can use a specific
 upstream API."
+
+### Adding an API at runtime
+
+`add_api` takes the same manifest shape as an `apis.json` entry and registers it
+immediately, stored in KV alongside the bundled ones. It is deliberately
+narrower than editing `apis.json`:
+
+- **The host must be pre-approved from a terminal.** Set the allowed hostnames
+  once with `npm run secret -- put ALLOWED_NEW_HOSTS` (comma-separated). Until
+  then every `add_api` call is refused, so nothing that merely holds a client
+  connection can point the server at a new host.
+- **https only.**
+- **Declarative auth only** — `bearer`, `header`, `query`, `basic` or `"none"`.
+  Code-backed auth flows are reserved for bundled APIs.
+- **The secret must be named `API_*`** (for example `API_WEATHER_KEY`), so an
+  added manifest can't name an unrelated secret and have it sent out. The value
+  is never set through MCP: run `npm run secret -- put API_WEATHER_KEY`. Until
+  it is set, the API is registered but unusable.
+
+`remove_api` deletes a runtime-added API. Bundled APIs can't be removed that
+way; `set_config` with `disable` turns any API off, reversibly. Both settings
+live in eventually consistent KV, so they can take up to a minute to apply
+everywhere — use them for housekeeping, not as a kill switch. To stop an API
+immediately, revoke its credential or deploy.
 
 ### Credential types
 
