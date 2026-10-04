@@ -1,6 +1,6 @@
 import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import { oauthHandler } from "./oauth";
-import { mcpHandler, json } from "./mcp-handler";
+import { mcpHandler, oauthMcpHandler } from "./mcp-handler";
 import { tokenValid } from "./legacy-auth";
 import type { Env } from "./types";
 
@@ -14,12 +14,18 @@ function legacyToken(request: Request, url: URL): string | null {
   const header = request.headers.get("x-mcp-token");
   if (header) return header.trim();
   const match = url.pathname.match(/^\/mcp\/([^/]+)\/?$/);
-  return match ? decodeURIComponent(match[1]) : null;
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    // A malformed escape is just a wrong token, not a reason to throw.
+    return null;
+  }
 }
 
 const oauthProvider = new OAuthProvider({
   apiRoute: "/mcp",
-  apiHandler: mcpHandler as any,
+  apiHandler: oauthMcpHandler as any,
   defaultHandler: oauthHandler as any,
   authorizeEndpoint: "/authorize",
   tokenEndpoint: "/token",
@@ -34,7 +40,7 @@ export default {
     // A valid legacy token short-circuits OAuth entirely. Anything else on /mcp
     // falls through, so the provider can answer with a 401 that points Claude at
     // the OAuth flow — which is what makes the Connect button appear.
-    if (isMcp && tokenValid(legacyToken(request, url), env)) {
+    if (isMcp && (await tokenValid(legacyToken(request, url), env))) {
       return mcpHandler.fetch(request, env);
     }
 

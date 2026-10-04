@@ -113,6 +113,9 @@ narrower than editing `apis.json`:
   added manifest can't name an unrelated secret and have it sent out. The value
   is never set through MCP: run `npm run secret -- put API_WEATHER_KEY`. Until
   it is set, the API is registered but unusable.
+- **One credential, one host.** An added manifest can't name a secret that
+  another manifest already sends to a different host.
+- **Bounded.** At most 50 added APIs, each manifest at most 128 KB.
 
 `remove_api` deletes a runtime-added API. Bundled APIs can't be removed that
 way; `set_config` with `disable` turns any API off, reversibly. Both settings
@@ -157,16 +160,29 @@ template.
 Deliberate, and all in one place:
 
 - **Host allowlist.** `call_api` can only reach hosts that appear in a manifest's
-  base URL. `..` segments and protocol-relative paths are rejected, and the final
-  URL is re-checked against the base before the request goes out. An MCP tool
-  that accepts an arbitrary URL is an SSRF hole and a data-exfiltration path.
+  base URL, and only beneath its base path (`/v1` never admits `/v1beta`).
+  Dot segments (`..`, `.`, and their `%2e` spellings), protocol-relative paths,
+  backslashes, control characters, and `?` or `#` inside `path` are rejected,
+  because the URL parser would otherwise rewrite them into a different path
+  than the one checked. The final URL is re-checked against the base before the
+  request goes out. An MCP tool that accepts an arbitrary URL is an SSRF hole
+  and a data-exfiltration path.
+- **Redirects are not followed.** A 3xx comes back to the model with its
+  `Location`, so an open redirect on an allowed host can't carry the request,
+  or its credential, somewhere else.
 - **Read-only by default.** A manifest must set `write: true` for anything other
   than GET.
 - **Deny rules** block specific method + path globs even on write-enabled APIs —
   the place to put "never delete," "never send," "never grant access" for a
-  given provider.
+  given provider. A rule is matched against the path as sent and as an
+  upstream would route it (percent-decoded, repeated slashes collapsed,
+  trailing slash dropped), both before the URL is built and again on the URL
+  actually sent, so `/%73end`, `/send/` and `/x/%2e%2e/send` hit the same rule
+  as `/send`.
 - **Response truncation** at 30k chars by default, 200k ceiling, with the real
-  length reported so the caller knows to narrow the query.
+  length reported so the caller knows to narrow the query. Bodies are read only
+  as far as the cap, so an upstream streaming gigabytes can't exhaust the
+  Worker's memory; images over 5 MB are refused without being read in full.
 - **Credentials never enter the model's context.** They are Worker secrets,
   attached during the fetch. `call_api` has no token argument.
 
@@ -204,6 +220,12 @@ is refused until it is set — otherwise anyone with an account at your provider
 could connect. The account is read from the OIDC `id_token` (claim
 `OAUTH_USER_CLAIM`, default `email`); for a provider without one, such as
 GitHub, set `OAUTH_USERINFO_URL` and the claim to read from it (`login`).
+The `id_token` must name your client as its audience, and when the claim is
+`email` it must say `email_verified: true`. Some providers (Microsoft Entra
+among them) leave that flag out and let users edit their email, so with those,
+pin a stable id such as `sub` or `oid` instead. The pin is checked again on
+every request, not just at login, so removing an account from the list cuts off
+the tokens it already holds.
 `OAUTH_SCOPES` defaults to `openid email`, and `OAUTH_AUTHORIZE_PARAMS` passes
 anything provider-specific through as a query string.
 
@@ -213,7 +235,10 @@ setup is on each provider's own site and changes independently of this project.
 A fallback **shared-token** mode is also always available: a long random
 secret accepted as a Bearer header or a trailing path segment, for the case
 where you don't want to stand up an OAuth login at all (single user, trusted
-network). It short-circuits the OAuth flow entirely.
+network). It short-circuits the OAuth flow entirely. A token shorter than 16
+characters is ignored as if unset (`npm run gen-token` makes 32). Prefer the
+header: a token in the path ends up in request logs, including Workers
+observability.
 
 **Who can use a specific upstream API (per-API credentials).** Independent of
 the above. Most APIs use a static key — see "Credential types." Some APIs
@@ -270,7 +295,15 @@ Nothing here reaches npm at run time.
 ```bash
 npm run dev          # local server on :8787, secrets from .dev.vars
 npm run typecheck
+npm test             # adversarial tests of every guardrail
 ```
+
+`npm test` bundles `test/*.test.ts` with the Worker source and runs it under
+`node:test`, driving the real handlers with a fake env, an in-memory KV and a
+stubbed `fetch` that records every outbound request. Each test is an attack on
+one guardrail (a deny-rule bypass, an escape from the base URL, a borrowed
+credential, an oversized response, a forged login) and passes only if nothing
+leaves the Worker that shouldn't.
 
 `.dev.vars` is gitignored. Smoke-test a running server:
 
@@ -291,6 +324,8 @@ dependencies. It never deploys.
 ### What the validator checks
 
 Ids are unique and well-formed, `baseUrl` parses and has no trailing slash,
+query, fragment or embedded credentials (and is https whenever auth sends a
+credential), endpoint fields have the right types,
 `write` is explicit, auth types carry their required fields, deny presets
 exist, methods are uppercase and real, and every endpoint has a path and
 summary. Errors name the API and field.

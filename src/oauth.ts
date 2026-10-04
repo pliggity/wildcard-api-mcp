@@ -46,6 +46,10 @@ function page(title: string, body: string, status = 200, extra: Record<string, s
         // The approval button must not be clickable from inside someone else's frame.
         "x-frame-options": "DENY",
         "content-security-policy": "frame-ancestors 'none'",
+        // Each page is one person's step in one sign-in; none should be kept.
+        "cache-control": "no-store",
+        "referrer-policy": "no-referrer",
+        "x-content-type-options": "nosniff",
         ...extra,
       },
     },
@@ -85,6 +89,11 @@ function missingConfig(env: Env): string | null {
   // closed rather than make "configured" mean "open to the world".
   if (!allowedUsers(env).length) return "OAUTH_ALLOWED_USERS";
   return null;
+}
+
+/** Whether an account is on OAUTH_ALLOWED_USERS right now. */
+export function isAllowedUser(env: Env, user: string): boolean {
+  return allowedUsers(env).includes(user.toLowerCase());
 }
 
 function allowedUsers(env: Env): string[] {
@@ -176,7 +185,8 @@ async function identify(env: Env, tokens: Tokens): Promise<string | null> {
   } else if (tokens.id_token) {
     // The id_token came straight from the token endpoint over TLS, in exchange
     // for our client secret, so its signature need not be checked (OIDC Core
-    // 3.1.3.7). The audience still must be us.
+    // 3.1.3.7). The audience still must be us, and must be stated: aud is
+    // required by OIDC, so a token without one is not one to trust.
     try {
       const payload = tokens.id_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
       claims = JSON.parse(atob(payload));
@@ -184,12 +194,22 @@ async function identify(env: Env, tokens: Tokens): Promise<string | null> {
       return null;
     }
     const aud = claims?.aud;
-    if (aud !== undefined && !(Array.isArray(aud) ? aud : [aud]).includes(env.OAUTH_CLIENT_ID)) return null;
+    if (!(Array.isArray(aud) ? aud : [aud]).includes(env.OAUTH_CLIENT_ID)) return null;
   }
 
   if (!claims) return null;
-  // An unverified address is just a string someone typed.
-  if (claim === "email" && claims.email_verified === false) return null;
+  // An unverified address is just a string someone typed. Some providers send
+  // the flag as a string. An OIDC id_token must affirm it outright: several
+  // providers (Microsoft Entra among them) omit it and let users set `email`
+  // freely, so silence is not verification. Non-OIDC userinfo endpoints such as
+  // GitHub's don't carry the flag at all, and only expose verified addresses,
+  // so there only an explicit "no" is refused.
+  if (claim === "email") {
+    const flag = claims.email_verified;
+    const verified = flag === true || flag === "true";
+    const refused = flag === false || flag === "false";
+    if (refused || (!env.OAUTH_USERINFO_URL && !verified)) return null;
+  }
   const value = claims[claim];
   return typeof value === "string" || typeof value === "number" ? String(value) : null;
 }
@@ -226,7 +246,15 @@ export const oauthHandler = {
     if (url.pathname === "/authorize") {
       const missing = missingConfig(env);
       if (missing) return page("Not configured", `<p>${missing} is not set on this Worker.</p>`, 500);
-      const req = await env.OAUTH_PROVIDER.parseAuthRequest(request);
+      let req: AuthRequest;
+      try {
+        req = await env.OAUTH_PROVIDER.parseAuthRequest(request);
+      } catch (err) {
+        // Usually an unknown client or an unregistered redirect_uri. Never
+        // redirect on these: the redirect target may be exactly what failed.
+        const reason = err instanceof Error ? err.message : String(err);
+        return page("Bad request", `<p>This authorization request is not valid: ${escapeHtml(reason)}</p>`, 400);
+      }
 
       // Registration at /register is open (anyone can register a client), so
       // the client requesting access here may not be one this server's owner
@@ -283,7 +311,7 @@ export const oauthHandler = {
       }
 
       // The provider proves who someone is; this decides whether they get in.
-      if (!allowedUsers(env).includes(user.toLowerCase())) {
+      if (!isAllowedUser(env, user)) {
         return page(
           "Wrong account",
           "<p>That is not an account this server is set up for. Nothing was changed.</p>" +

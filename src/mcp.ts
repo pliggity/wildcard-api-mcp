@@ -10,6 +10,7 @@ import {
   validateAddition,
   writeOverlay,
 } from "./config";
+import { MIN_TOKEN_LENGTH } from "./legacy-auth";
 import { APIS } from "./registry";
 import type { Env } from "./types";
 
@@ -308,7 +309,13 @@ async function getConfig(env: Env): Promise<string> {
     `storage: ${env.OAUTH_KV ? "KV bound" : "NO KV BOUND — set_config cannot save"}`,
     `hosts allowed for add_api: ${hosts.length ? hosts.join(", ") : "NONE — add_api is refused until ALLOWED_NEW_HOSTS is set"}`,
     `KV encryption key: ${secretPresent(env, "KV_ENCRYPTION_KEY") ? "set" : "not set"}`,
-    `legacy shared token: ${secretPresent(env, "PERSONAL_MCP_TOKEN") ? "set" : "not set"}`,
+    `legacy shared token: ${
+      !secretPresent(env, "PERSONAL_MCP_TOKEN")
+        ? "not set"
+        : String(env.PERSONAL_MCP_TOKEN).length < MIN_TOKEN_LENGTH
+          ? `set but IGNORED — shorter than ${MIN_TOKEN_LENGTH} characters`
+          : "set"
+    }`,
   ];
 
   const banner = disabledUnreadable
