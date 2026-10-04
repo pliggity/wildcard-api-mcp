@@ -252,8 +252,12 @@ Nothing here reaches npm at run time.
   binary locally, which is how you end up running a package you never chose.
   Every command here goes through `npm run`, which resolves binaries from
   `node_modules/.bin` only.
-- **Exact versions, no ranges.** `package.json` pins exact versions, and
-  `.npmrc` sets `save-exact=true` so future installs stay pinned.
+- **Nothing younger than a week.** `package.json` takes `^` ranges so
+  `npm update` can pick up fixes, but `.npmrc` sets `min-release-age=7`, so npm
+  only resolves versions that have been public for at least 7 days. A
+  compromised or broken release is usually found and pulled within that
+  window. This needs npm 11.10 or later; `npm run check-age` verifies the
+  lockfile, and CI runs it too.
 - **Install with `npm ci`, not `npm install`.** `npm ci` installs precisely what
   `package-lock.json` specifies, with integrity hashes, and fails loudly if the
   lockfile and `package.json` disagree.
@@ -273,6 +277,16 @@ npm run typecheck
 ```bash
 curl -s localhost:8787/mcp -H "authorization: Bearer $TOKEN" -H "content-type: application/json" -H "accept: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_apis","arguments":{}}}'
 ```
+
+### Build and CI
+
+`npm run build` bundles the Worker into `dist/` without deploying, which
+is the quickest way to see that it still builds.
+
+CI runs on every push and pull request: release-age check, `npm ci`,
+typecheck, validation of both `apis.json` and `example.apis.json`, the
+bundle build, the tests when present, and an audit of runtime
+dependencies. It never deploys.
 
 ### What the validator checks
 

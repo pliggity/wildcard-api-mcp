@@ -11,15 +11,17 @@
     "check": "node scripts/check.mjs",
     "validate": "node scripts/validate-apis.mjs",
     "check-drift": "node scripts/check-drift.mjs",
-    "setup": "node scripts/setup.mjs"
+    "setup": "node scripts/setup.mjs",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "check-age": "node scripts/check-release-age.mjs"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20260829.1",
-    "typescript": "5.9.3",
-    "wrangler": "4.127.1"
+    "@cloudflare/workers-types": "^5.20260829.1",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.127.1"
   },
   "dependencies": {
-    "@cloudflare/workers-oauth-provider": "0.10.3"
+    "@cloudflare/workers-oauth-provider": "^0.10.3"
   },
   "description": "One self-hosted MCP server that fronts any REST API, with a fixed four-tool surface so adding an API costs no context.",
   "license": "MIT"

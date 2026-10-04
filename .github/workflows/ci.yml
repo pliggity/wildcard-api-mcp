@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Read-only token: CI never writes to the repo and never deploys.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WRANGLER_SEND_METRICS: "false"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Actions are pinned to commit SHAs, the same way package-lock.json pins packages.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+
+      # Every locked version must be at least min-release-age days old (.npmrc).
+      - name: Dependencies are old enough
+        run: npm run check-age
+
+      # No install scripts, matching npm's default of blocking them locally.
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Validate apis.json
+        run: npm run validate
+
+      # The example is what new users copy, so it has to stay valid too.
+      - name: Validate example.apis.json
+        run: |
+          cp example.apis.json apis.json
+          npm run validate
+          git checkout -- apis.json
+
+      # --if-present keeps this a no-op until a test script exists.
+      - name: Test
+        run: npm run test --if-present
+
+      - name: Build Worker bundle
+        run: npm run build
+
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
