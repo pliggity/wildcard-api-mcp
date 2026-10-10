@@ -29,7 +29,7 @@ try {
   const email = who.match(/associated with the email ([^\s.]+@[^\s.]+\.\S+?)\./)?.[1];
   say(`   logged in${email ? ` as ${email}` : ""}`);
 } catch {
-  say("   Not logged in. Run:  npx wrangler login");
+  say("   Not logged in. Run:  npm run login");
   process.exit(1);
 }
 
@@ -81,12 +81,26 @@ function putSecret(name, value) {
 }
 
 step(3, "Generated secrets");
+let newToken = null;
 for (const [name, gen] of [
   ["PERSONAL_MCP_TOKEN", () => randomBytes(24).toString("base64url")],
   ["KV_ENCRYPTION_KEY", () => randomBytes(32).toString("base64")],
 ]) {
   if (existingSecrets.has(name)) say(`   ${name} already set — leaving it alone`);
-  else putSecret(name, gen());
+  else {
+    const value = gen();
+    putSecret(name, value);
+    if (name === "PERSONAL_MCP_TOKEN") newToken = value;
+  }
+}
+if (newToken) {
+  // A Worker secret can't be read back, so this is the only time it is shown.
+  say(`
+   Your shared token (shown once, save it now, e.g. in a password manager):
+
+      ${newToken}
+
+   Lost it? Set a new one:  npm run gen-token, then npm run secret -- put PERSONAL_MCP_TOKEN`);
 }
 
 // ---------------------------------------------------------------- deploy
@@ -111,7 +125,8 @@ say(`
    Skip this to use only the shared token (PERSONAL_MCP_TOKEN).
 `);
 const ready = (await rl.question("   Have the provider's endpoints and client credentials? [y/N] ")).trim().toLowerCase();
-if (ready === "y") {
+const oauth = ready === "y";
+if (oauth) {
   const ask = async (name, prompt) => {
     const value = (await rl.question(`   ${prompt}: `)).trim();
     if (value) putSecret(name, value);
@@ -136,16 +151,25 @@ if (workerUrl) {
 }
 
 step(6, "Connect a client");
-say(`
+const base = workerUrl ?? "<worker-url>";
+say(oauth ? `
    Claude Code:
-     claude mcp add --transport http wildcard ${workerUrl ?? "<worker-url>"}/mcp
+     claude mcp add --transport http wildcard ${base}/mcp
      claude mcp login wildcard
 
    claude.ai / Cowork:
      Settings > Connectors > Add > Custom > Web
-     ${workerUrl ?? "<worker-url>"}/mcp
+     ${base}/mcp
      Take the detected defaults (Always required + register automatically).
+` : `
+   Claude Code:
+     claude mcp add --transport http wildcard ${base}/mcp --header "Authorization: Bearer <YOUR_TOKEN>"
 
+   claude.ai / Cowork (no header field, so the token goes in the path):
+     Settings > Connectors > Add > Custom > Web
+     ${base}/mcp/<YOUR_TOKEN>
+`);
+say(`
    Add API keys for other APIs as you add manifests to apis.json:
      npm run secret -- put SOME_TOKEN
 `);

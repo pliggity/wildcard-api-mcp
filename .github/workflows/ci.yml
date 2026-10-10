@@ -53,9 +53,8 @@ jobs:
           npm run validate
           git checkout -- apis.json
 
-      # --if-present keeps this a no-op until a test script exists.
       - name: Test
-        run: npm run test --if-present
+        run: npm test
 
       - name: Build Worker bundle
         run: npm run build

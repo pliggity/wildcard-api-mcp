@@ -22,14 +22,19 @@ never changes, so context cost stays flat no matter how many APIs are wired up.
 
 ## Setup
 
+You need Node.js 22 or later and a Cloudflare account.
+
 ```bash
 npm ci
-npx wrangler login     # one time, your own Cloudflare account
+npm run login          # one time, your own Cloudflare account
 npm run setup
 ```
 
-`npm run setup` creates the KV namespace, generates a server token and an
-encryption key, deploys, and prints your Worker's URL. It is safe to re-run.
+`npm run setup` creates the KV namespace, generates a shared token
+(`PERSONAL_MCP_TOKEN`) and an encryption key, deploys, and prints your Worker's
+URL and the token. The token is shown only that once, because a Worker secret
+can't be read back. It is safe to re-run. See [SETUP.md](SETUP.md) for the
+optional OAuth login.
 
 At this point the server runs with zero APIs configured. See "Adding an API"
 below — every API, including the first one, is added the same way.
@@ -51,8 +56,8 @@ https://<your-worker>.workers.dev/mcp/<YOUR_TOKEN>
 
 Both forms hit the same server and the same constant-time check. The path form
 puts the secret in a URL, which is marginally leakier (URLs turn up in logs and
-history) — rotate it by setting the token secret again and updating the
-connector.
+history). To rotate it, run `npm run gen-token`, set the result with
+`npm run secret -- put PERSONAL_MCP_TOKEN`, and update the connector.
 
 ## Adding an API
 
@@ -290,9 +295,10 @@ Nothing here reaches npm at run time.
 - **Install with `npm ci`, not `npm install`.** `npm ci` installs precisely what
   `package-lock.json` specifies, with integrity hashes, and fails loudly if the
   lockfile and `package.json` disagree.
-- **Install scripts are gated.** npm blocks package postinstall scripts by
-  default and names what it blocked; approve them deliberately with `npm
-  approve-scripts`.
+- **Install scripts are gated.** From npm 12, dependency install scripts are
+  blocked by default and npm names what it skipped; approve them deliberately
+  with `npm approve-scripts`. Nothing here needs one: CI installs with
+  `--ignore-scripts`.
 
 ## Development
 
@@ -309,11 +315,21 @@ one guardrail (a deny-rule bypass, an escape from the base URL, a borrowed
 credential, an oversized response, a forged login) and passes only if nothing
 leaves the Worker that shouldn't.
 
-`.dev.vars` is gitignored. Smoke-test a running server:
+Copy `.dev.vars.example` to `.dev.vars` (gitignored) for local secrets.
+Smoke-test a running server:
 
 ```bash
 curl -s localhost:8787/mcp -H "authorization: Bearer $TOKEN" -H "content-type: application/json" -H "accept: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_apis","arguments":{}}}'
 ```
+
+`npm run check` asks the deployed server to run `check_auth` against every
+credential, using the shared token from the environment, 1Password or a
+prompt.
+
+`npm run check-drift` reports manifests whose upstream API description has
+changed since they were written. It only looks at manifests with a `spec`
+block (`source` is `npm:<package>` with a `packageVersion`, or an https URL
+with the `sha256` of the copy you wrote from).
 
 ### Build and CI
 

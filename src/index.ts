@@ -5,8 +5,8 @@ import { tokenValid } from "./legacy-auth";
 import type { Env } from "./types";
 
 /**
- * The legacy shared token, as a Bearer header or a trailing path segment.
- * Kept alongside OAuth so existing clients keep working through the migration.
+ * The shared token, as a Bearer header, an x-mcp-token header or a trailing
+ * path segment. It works alongside OAuth, for clients that skip the login.
  */
 function legacyToken(request: Request, url: URL): string | null {
   const auth = request.headers.get("authorization");
@@ -37,7 +37,7 @@ export default {
     const url = new URL(request.url);
     const isMcp = url.pathname === "/mcp" || url.pathname.startsWith("/mcp/");
 
-    // A valid legacy token short-circuits OAuth entirely. Anything else on /mcp
+    // A valid shared token short-circuits OAuth entirely. Anything else on /mcp
     // falls through, so the provider can answer with a 401 that points Claude at
     // the OAuth flow — which is what makes the Connect button appear.
     if (isMcp && (await tokenValid(legacyToken(request, url), env))) {
