@@ -10,6 +10,7 @@ import {
   validateAddition,
   writeOverlay,
 } from "./config";
+import { MIN_TOKEN_LENGTH } from "./legacy-auth";
 import { APIS } from "./registry";
 import type { Env } from "./types";
 
@@ -271,6 +272,19 @@ async function checkAuth(env: Env): Promise<string> {
 }
 
 /** Whether a named Worker secret is present — never its value. */
+/** Every PERSONAL_MCP_TOKEN* secret by name, flagging any too short to be accepted. */
+function legacyTokenStatus(env: Env): string {
+  const names = Object.keys(env)
+    .filter((k) => k.startsWith("PERSONAL_MCP_TOKEN") && secretPresent(env, k))
+    .sort();
+  if (!names.length) return "not set";
+  return names
+    .map((k) =>
+      String(env[k]).length < MIN_TOKEN_LENGTH ? `${k} set but IGNORED — shorter than ${MIN_TOKEN_LENGTH} characters` : `${k} set`,
+    )
+    .join("; ");
+}
+
 function secretPresent(env: Env, name: string): boolean {
   return typeof env[name] === "string" && !!env[name];
 }
@@ -308,7 +322,7 @@ async function getConfig(env: Env): Promise<string> {
     `storage: ${env.OAUTH_KV ? "KV bound" : "NO KV BOUND — set_config cannot save"}`,
     `hosts allowed for add_api: ${hosts.length ? hosts.join(", ") : "NONE — add_api is refused until ALLOWED_NEW_HOSTS is set"}`,
     `KV encryption key: ${secretPresent(env, "KV_ENCRYPTION_KEY") ? "set" : "not set"}`,
-    `legacy shared token: ${secretPresent(env, "PERSONAL_MCP_TOKEN") ? "set" : "not set"}`,
+    `legacy shared token: ${legacyTokenStatus(env)}`,
   ];
 
   const banner = disabledUnreadable

@@ -20,7 +20,13 @@ function validateEndpoint(apiId: string, e: any, i: number): Endpoint {
   if (!METHODS.includes(e.method)) fail(where, `method must be one of ${METHODS.join(", ")}, got ${JSON.stringify(e.method)}`);
   if (typeof e.path !== "string" || !e.path.startsWith("/")) fail(where, "path must be a string starting with '/'");
   if (typeof e.summary !== "string" || !e.summary) fail(where, "summary is required");
-  if (e.query !== undefined && !Array.isArray(e.query)) fail(where, "query must be an array of parameter names");
+  if (e.query !== undefined && !(Array.isArray(e.query) && e.query.every((q: unknown) => typeof q === "string"))) {
+    fail(where, "query must be an array of parameter names");
+  }
+  // These are rendered into describe_api, so anything but a string is a mistake.
+  for (const field of ["body", "notes"]) {
+    if (e[field] !== undefined && typeof e[field] !== "string") fail(where, `${field} must be a string`);
+  }
   return e as Endpoint;
 }
 
@@ -36,6 +42,7 @@ function resolveDeny(apiId: string, deny: any): DenyRule[] | undefined {
   if (!Array.isArray(deny)) fail(`${apiId}.deny`, "must be a preset name or an array of rules");
   deny.forEach((r: any, i: number) => {
     const where = `${apiId}.deny[${i}]`;
+    if (!r || typeof r !== "object") fail(where, "must be an object");
     if (r.method !== "*" && !METHODS.includes(r.method)) fail(where, `method must be "*" or one of ${METHODS.join(", ")}`);
     if (typeof r.path !== "string") fail(where, "path is required");
     if (typeof r.reason !== "string" || !r.reason) fail(where, "reason is required — it is shown to the caller");
@@ -62,7 +69,23 @@ export function validateManifests(raw: unknown): ApiManifest[] {
       fail(id, `baseUrl is not a valid URL: ${a.baseUrl}`);
     }
     if (a.baseUrl.endsWith("/")) fail(id, "baseUrl must not end with '/'");
+    const base = new URL(a.baseUrl);
+    // Every request is built by appending to this string, so a query, fragment
+    // or userinfo here would corrupt or redirect every call made through it.
+    if (base.username || base.password || a.baseUrl.includes("?") || a.baseUrl.includes("#")) {
+      fail(id, "baseUrl must be a plain scheme://host/path, with no credentials, query or fragment");
+    }
+    if (base.protocol !== "https:" && base.protocol !== "http:") fail(id, "baseUrl must be http(s)");
+    // A credential sent over plain http is readable by anyone on the path.
+    if (base.protocol === "http:" && typeof a.auth === "object") fail(id, "baseUrl must be https when auth sends a credential");
     if (typeof a.write !== "boolean") fail(id, "write must be true or false — state it explicitly");
+    if (a.docs !== undefined && typeof a.docs !== "string") fail(id, "docs must be a string");
+    if (a.defaultQuery !== undefined) {
+      const q = a.defaultQuery;
+      if (!q || typeof q !== "object" || Array.isArray(q) || !Object.values(q).every((v) => typeof v === "string")) {
+        fail(`${id}.defaultQuery`, "must be an object of string values");
+      }
+    }
 
     const auth = a.auth;
     if (typeof auth === "string") {

@@ -2,13 +2,14 @@
  * Path glob where `*` matches within one segment and `**` matches across
  * segments. Used by deny rules, so it fails closed on a malformed pattern.
  *
- * Matched with memoized DP rather than a compiled RegExp: deny patterns are
- * trusted (hardcoded presets or the manifest), but the path being tested
- * comes from whatever the model passes to call_api — untrusted, and
- * potentially injected via API response content. A pattern with adjacent
- * wildcards compiled to RegExp can hit catastrophic backtracking on an
- * adversarial path; memoization bounds this to tokens.length * path.length
- * subproblems regardless of how the pattern is shaped.
+ * Matched with a bottom-up DP table rather than a compiled RegExp: deny
+ * patterns are trusted (hardcoded presets or the manifest), but the path being
+ * tested comes from whatever the model passes to call_api — untrusted, and
+ * potentially injected via API response content. A RegExp with adjacent
+ * wildcards can backtrack catastrophically on an adversarial path; the table
+ * is exactly (tokens + 1) * (path.length + 1) cells, each filled in constant
+ * time, whatever shape the pattern has. Iterative, so no input can exhaust the
+ * stack either.
  */
 
 type Token = { type: "lit"; value: string } | { type: "seg" } | { type: "star" };
@@ -26,40 +27,26 @@ function tokenize(pattern: string): Token[] {
 
 export function pathMatches(pattern: string, path: string): boolean {
   const tokens = tokenize(pattern);
-  const memo = new Map<string, boolean>();
-
-  function match(t: number, s: number): boolean {
-    const key = `${t}:${s}`;
-    const cached = memo.get(key);
-    if (cached !== undefined) return cached;
-
-    let result: boolean;
+  const n = path.length;
+  // next[s]: whether tokens[t+1..] match path[s..]. Filled from the end.
+  let next = new Uint8Array(n + 1);
+  next[n] = 1;
+  for (let t = tokens.length - 1; t >= 0; t--) {
     const token = tokens[t];
-    if (!token) {
-      result = s === path.length;
-    } else if (token.type === "lit") {
-      result = path.startsWith(token.value, s) && match(t + 1, s + token.value.length);
-    } else if (token.type === "seg") {
-      // Consume zero or more non-'/' characters.
-      let end = s;
-      result = match(t + 1, end);
-      while (!result && end < path.length && path[end] !== "/") {
-        end++;
-        result = match(t + 1, end);
-      }
-    } else {
-      // "**": consume zero or more characters of any kind, '/' included.
-      let end = s;
-      result = match(t + 1, end);
-      while (!result && end < path.length) {
-        end++;
-        result = match(t + 1, end);
+    const cur = new Uint8Array(n + 1);
+    for (let s = n; s >= 0; s--) {
+      if (token.type === "lit") {
+        const end = s + token.value.length;
+        cur[s] = end <= n && next[end] && path.startsWith(token.value, s) ? 1 : 0;
+      } else if (token.type === "seg") {
+        // "*": zero characters, or one non-'/' character and still in "*".
+        cur[s] = next[s] || (s < n && path[s] !== "/" && cur[s + 1]) ? 1 : 0;
+      } else {
+        // "**": zero characters, or one of any kind and still in "**".
+        cur[s] = next[s] || (s < n && cur[s + 1]) ? 1 : 0;
       }
     }
-
-    memo.set(key, result);
-    return result;
+    next = cur;
   }
-
-  return match(0, 0);
+  return next[0] === 1;
 }

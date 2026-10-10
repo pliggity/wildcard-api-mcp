@@ -1,5 +1,12 @@
 import { handleRpc } from "./mcp";
+import { isAllowedUser } from "./oauth";
 import type { Env } from "./types";
+
+/**
+ * MCP (2025-06-18) dropped JSON-RPC batching; it is still accepted for older
+ * clients, but bounded, since every message in a batch can be an outbound call.
+ */
+const MAX_BATCH = 20;
 
 export const CORS = {
   "access-control-allow-origin": "*",
@@ -47,11 +54,42 @@ export const mcpHandler = {
     const wantsSse = accept.includes("text/event-stream") && !accept.includes("application/json");
 
     const messages = Array.isArray(payload) ? payload : [payload];
-    const responses = (await Promise.all(messages.map((m) => handleRpc(m, env)))).filter(Boolean);
+    if (!messages.length || messages.length > MAX_BATCH) {
+      return json(
+        { jsonrpc: "2.0", id: null, error: { code: -32600, message: `A batch must hold 1 to ${MAX_BATCH} messages.` } },
+        400,
+      );
+    }
+    const responses = (
+      await Promise.all(
+        messages.map((m) =>
+          m && typeof m === "object" && !Array.isArray(m) && typeof m.method === "string"
+            ? handleRpc(m, env)
+            : { jsonrpc: "2.0", id: m?.id ?? null, error: { code: -32600, message: "Invalid Request" } },
+        ),
+      )
+    ).filter(Boolean);
 
     if (!responses.length) return new Response(null, { status: 202, headers: CORS });
 
     const body = Array.isArray(payload) ? responses : responses[0];
     return wantsSse ? sse(body) : json(body!);
+  },
+};
+
+/**
+ * The OAuth provider's view of /mcp. A grant carries the account it was issued
+ * to, and that account is checked against OAUTH_ALLOWED_USERS on every
+ * request, not just at login: removing someone from the list cuts off the
+ * tokens and refresh tokens they already hold, rather than leaving them
+ * working until they lapse.
+ */
+export const oauthMcpHandler = {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext & { props?: { user?: unknown } }): Promise<Response> {
+    const user = ctx?.props?.user;
+    if (typeof user !== "string" || !isAllowedUser(env, user)) {
+      return json({ error: "forbidden", error_description: "This account is no longer allowed on this server." }, 403);
+    }
+    return mcpHandler.fetch(request, env);
   },
 };
