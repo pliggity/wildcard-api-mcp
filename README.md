@@ -31,7 +31,7 @@ npm run setup
 ```
 
 `npm run setup` creates the KV namespace, generates a shared token
-(`PERSONAL_MCP_TOKEN`) and an encryption key, deploys, and prints your Worker's
+(`MCP_TOKEN`) and an encryption key, deploys, and prints your Worker's
 URL and the token. The token is shown only that once, because a Worker secret
 can't be read back. It is safe to re-run. See [SETUP.md](SETUP.md) for the
 optional OAuth login.
@@ -57,7 +57,7 @@ https://<your-worker>.workers.dev/mcp/<YOUR_TOKEN>
 Both forms hit the same server and the same constant-time check. The path form
 puts the secret in a URL, which is marginally leakier (URLs turn up in logs and
 history). To rotate it, run `npm run gen-token`, set the result with
-`npm run secret -- put PERSONAL_MCP_TOKEN`, and update the connector.
+`npm run secret -- put MCP_TOKEN`, and update the connector.
 
 ## Adding an API
 

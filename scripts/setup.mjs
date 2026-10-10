@@ -83,14 +83,14 @@ function putSecret(name, value) {
 step(3, "Generated secrets");
 let newToken = null;
 for (const [name, gen] of [
-  ["PERSONAL_MCP_TOKEN", () => randomBytes(24).toString("base64url")],
+  ["MCP_TOKEN", () => randomBytes(24).toString("base64url")],
   ["KV_ENCRYPTION_KEY", () => randomBytes(32).toString("base64")],
 ]) {
   if (existingSecrets.has(name)) say(`   ${name} already set — leaving it alone`);
   else {
     const value = gen();
     putSecret(name, value);
-    if (name === "PERSONAL_MCP_TOKEN") newToken = value;
+    if (name === "MCP_TOKEN") newToken = value;
   }
 }
 if (newToken) {
@@ -100,7 +100,7 @@ if (newToken) {
 
       ${newToken}
 
-   Lost it? Set a new one:  npm run gen-token, then npm run secret -- put PERSONAL_MCP_TOKEN`);
+   Lost it? Set a new one:  npm run gen-token, then npm run secret -- put MCP_TOKEN`);
 }
 
 // ---------------------------------------------------------------- deploy
@@ -122,7 +122,7 @@ say(`
 
       ${workerUrl ?? "https://<your-worker>.workers.dev"}/callback
 
-   Skip this to use only the shared token (PERSONAL_MCP_TOKEN).
+   Skip this to use only the shared token (MCP_TOKEN).
 `);
 const ready = (await rl.question("   Have the provider's endpoints and client credentials? [y/N] ")).trim().toLowerCase();
 const oauth = ready === "y";

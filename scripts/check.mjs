@@ -3,7 +3,7 @@
  * Ask the deployed server to test every credential it has.
  *
  * Usage: npm run check
- * Reads PERSONAL_MCP_TOKEN from the environment, or prompts for it. The token is
+ * Reads MCP_TOKEN from the environment, or prompts for it. The token is
  * never echoed and never written to disk.
  */
 import { createInterface } from "node:readline";
@@ -26,13 +26,13 @@ function askHidden(prompt) {
 }
 
 // Environment first (useful in scripts), then 1Password, then ask.
-let token = process.env.PERSONAL_MCP_TOKEN;
+let token = process.env.MCP_TOKEN;
 if (!token) {
-  process.stderr.write("Reading PERSONAL_MCP_TOKEN from 1Password... ");
+  process.stderr.write("Reading MCP_TOKEN from 1Password... ");
   token = await opRead(OP_REFS.mcpToken, { quiet: true });
   process.stderr.write(token ? "ok\n" : "not available\n");
 }
-if (!token) token = await askHidden("PERSONAL_MCP_TOKEN: ");
+if (!token) token = await askHidden("MCP_TOKEN: ");
 if (!token) {
   console.error("No token available.");
   process.exit(1);
@@ -55,7 +55,7 @@ const res = await fetch(`${URL_BASE}/mcp`, {
 
 const body = await res.text();
 if (res.status === 401) {
-  console.error("401 Unauthorized — that token doesn't match the PERSONAL_MCP_TOKEN secret.");
+  console.error("401 Unauthorized — that token doesn't match the MCP_TOKEN secret.");
   process.exit(1);
 }
 if (!res.ok) {

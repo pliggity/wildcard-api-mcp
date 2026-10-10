@@ -24,7 +24,7 @@ npm run login          # one time, your own Cloudflare account
 npm run setup
 ```
 
-`npm run setup` creates the KV namespace, generates `PERSONAL_MCP_TOKEN` and
+`npm run setup` creates the KV namespace, generates `MCP_TOKEN` and
 `KV_ENCRYPTION_KEY`, deploys, and prints your Worker's URL and the new token.
 Save the token then: it is shown only once, because Worker secrets can't be
 read back. It is safe to re-run: it reuses an existing namespace and leaves
@@ -58,7 +58,7 @@ See the "Adding an API" section of the README. Short version: one entry in
 
 If you keep credentials in 1Password, add an `opItems` block to `deploy.json` and
 `npm run check` will read the shared token from that item's
-`PERSONAL_MCP_TOKEN` field instead of prompting:
+`MCP_TOKEN` field instead of prompting:
 
 ```json
 {

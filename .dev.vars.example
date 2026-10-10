@@ -1,2 +1,2 @@
 # Local development only. Real values live as Worker secrets.
-PERSONAL_MCP_TOKEN=devtoken-0123456789abcdef
+MCP_TOKEN=devtoken-0123456789abcdef
