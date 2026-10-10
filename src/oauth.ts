@@ -181,7 +181,14 @@ async function identify(env: Env, tokens: Tokens): Promise<string | null> {
         "user-agent": "wildcard-api-mcp",
       },
     });
-    if (res.ok) claims = await res.json();
+    if (res.ok) {
+      try {
+        claims = await res.json();
+      } catch {
+        // Not JSON (an HTML error page served with 200, say): no one identified.
+        return null;
+      }
+    }
   } else if (tokens.id_token) {
     // The id_token came straight from the token endpoint over TLS, in exchange
     // for our client secret, so its signature need not be checked (OIDC Core
@@ -199,16 +206,15 @@ async function identify(env: Env, tokens: Tokens): Promise<string | null> {
 
   if (!claims) return null;
   // An unverified address is just a string someone typed. Some providers send
-  // the flag as a string. An OIDC id_token must affirm it outright: several
-  // providers (Microsoft Entra among them) omit it and let users set `email`
-  // freely, so silence is not verification. Non-OIDC userinfo endpoints such as
-  // GitHub's don't carry the flag at all, and only expose verified addresses,
-  // so there only an explicit "no" is refused.
+  // the flag as a string. It must be affirmed outright, from the id_token or
+  // from userinfo alike: several providers (Microsoft Entra among them) omit it
+  // and let users set `email` freely, so silence is not verification. For a
+  // provider that never sends it, such as GitHub, pin a stable id (`login`,
+  // `sub`) instead of the email.
   if (claim === "email") {
+    if (!(claims && typeof claims === "object")) return null;
     const flag = claims.email_verified;
-    const verified = flag === true || flag === "true";
-    const refused = flag === false || flag === "false";
-    if (refused || (!env.OAUTH_USERINFO_URL && !verified)) return null;
+    if (flag !== true && flag !== "true") return null;
   }
   const value = claims[claim];
   return typeof value === "string" || typeof value === "number" ? String(value) : null;

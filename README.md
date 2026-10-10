@@ -221,7 +221,7 @@ could connect. The account is read from the OIDC `id_token` (claim
 `OAUTH_USER_CLAIM`, default `email`); for a provider without one, such as
 GitHub, set `OAUTH_USERINFO_URL` and the claim to read from it (`login`).
 The `id_token` must name your client as its audience, and when the claim is
-`email` it must say `email_verified: true`. Some providers (Microsoft Entra
+`email` the provider (`id_token` or userinfo) must say `email_verified: true`. Some providers (Microsoft Entra
 among them) leave that flag out and let users edit their email, so with those,
 pin a stable id such as `sub` or `oid` instead. The pin is checked again on
 every request, not just at login, so removing an account from the list cuts off

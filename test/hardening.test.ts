@@ -123,6 +123,11 @@ describe("deny rules cannot be sidestepped by path tricks", () => {
     ["trailing slash on an exact rule", "/admin/"],
     ["doubled slash in the middle", "/admin//users"],
     ["empty segment before the target", "/./admin"],
+    ["different case", "/Admin/users"],
+    ["different case on an exact rule", "/ADMIN"],
+    ["path parameter on a segment", "/admin;x/users"],
+    ["encoded path parameter", "/admin%3Bx/users"],
+    ["path parameter on an exact rule", "/admin;jsessionid=1"],
   ];
 
   for (const [name, path] of tricks) {
@@ -214,8 +219,54 @@ describe("credentials", () => {
   test("a caller cannot smuggle a second credential param through the path", async () => {
     const env = await envWithApi({ auth: { type: "query", secret: "API_KEY", param: "key" } });
     seen = [];
-    await tool(env, "call_api", { api: "svc", path: "/x?key=attacker" });
-    for (const s of seen) assert.deepEqual(new URL(s.url).searchParams.getAll("key"), ["sekrit"]);
+    const r = await tool(env, "call_api", { api: "svc", path: "/x?key=attacker" });
+    assert.equal(r.isError, true, r.text);
+    assert.equal(seen.length, 0, `request reached ${seen.map((s) => s.url).join(", ")}`);
+  });
+
+  test("a query-param credential never appears in what call_api returns", async () => {
+    const secret = "sekrit-query-value";
+    const env = await envWithApi({ auth: { type: "query", secret: "API_KEY", param: "key" } }, { API_KEY: secret });
+    stubFetch((url) => new Response(`you sent ${url}`, { headers: { "content-type": "text/plain" } }));
+    const ok = await tool(env, "call_api", { api: "svc", path: "/x" });
+    assert.equal(new URL(seen[0].url).searchParams.get("key"), secret, "the upstream still gets the credential");
+    assert.doesNotMatch(ok.text, /sekrit/);
+    stubFetch(() => new Response(null, { status: 302, headers: { location: `https://api.test/v1/y?key=${secret}` } }));
+    const redirected = await tool(env, "call_api", { api: "svc", path: "/x" });
+    assert.doesNotMatch(redirected.text, /sekrit/);
+  });
+
+  test("the status line is built without the credential, not masked after the fact", async () => {
+    // Too short for the redactor to touch, so only the structure keeps it out.
+    const env = await envWithApi({ auth: { type: "query", secret: "API_KEY", param: "key" } }, { API_KEY: "k3y" });
+    const r = await tool(env, "call_api", { api: "svc", path: "/x", query: { q: "1" } });
+    assert.equal(new URL(seen[0].url).searchParams.get("key"), "k3y");
+    assert.match(r.text, /GET \/v1\/x\?q=1 /);
+    assert.doesNotMatch(r.text, /key=/);
+  });
+
+  test("a header credential echoed in a response body is redacted", async () => {
+    const env = await envWithApi({}, { API_KEY: "sekrit-bearer-value" });
+    stubFetch((_url, init) =>
+      new Response(`echo: ${(init.headers as Record<string, string>).authorization}`, {
+        headers: { "content-type": "text/plain" },
+      }),
+    );
+    const r = await tool(env, "call_api", { api: "svc", path: "/x" });
+    assert.doesNotMatch(r.text, /sekrit/);
+  });
+
+  test("a runtime-added API on the same host cannot move an existing secret into a query param", async () => {
+    const env = await envWithApi();
+    for (const auth of [
+      { type: "query", secret: "API_KEY", param: "k" },
+      { type: "header", secret: "API_KEY", header: "x-echo" },
+    ]) {
+      const r = await tool(env, "add_api", {
+        manifest: manifest({ id: "leak", baseUrl: "https://api.test/v2", deny: undefined, auth }),
+      });
+      assert.equal(r.isError, true, r.text);
+    }
   });
 
   test("a runtime-added API cannot borrow another API's secret for a different host", async () => {
@@ -271,6 +322,12 @@ describe("credentials", () => {
       manifest: manifest({ endpoints: [{ method: "GET", path: "/x", summary: "x", notes: { evil: true } }] }),
     });
     assert.equal(r.isError, true);
+  });
+
+  test("get_config flags every legacy token too short to be accepted", async () => {
+    const r = await tool(makeEnv({ PERSONAL_MCP_TOKEN_PHONE: "short" }), "get_config", {});
+    assert.match(r.text, /PERSONAL_MCP_TOKEN_PHONE set but IGNORED/);
+    assert.doesNotMatch(r.text, /PERSONAL_MCP_TOKEN set but IGNORED/);
   });
 
   test("get_config and list_apis never print a secret's value", async () => {
@@ -468,6 +525,29 @@ describe("OAuth", () => {
       assert.equal(calls.length, 0);
     });
   }
+
+  test("a userinfo provider that doesn't say the email is verified can't pin by email", async () => {
+    const { env, calls } = oauthEnv({ OAUTH_USERINFO_URL: "https://idp.test/user" });
+    const res = await callback(env, { access_token: "a" });
+    assert.notEqual(res.status, 302);
+    assert.equal(calls.length, 0);
+  });
+
+  test("a userinfo response that isn't JSON gets an error page, not a Worker exception", async () => {
+    const { env, calls } = oauthEnv({ OAUTH_USERINFO_URL: "https://idp.test/user" });
+    await env.OAUTH_KV.put("pending-auth:abc", JSON.stringify({ req: { clientId: "c" }, verifier: "v" }));
+    stubFetch((url) =>
+      url.startsWith("https://idp.test/token")
+        ? Response.json({ access_token: "a" })
+        : new Response("<html>oops</html>", { headers: { "content-type": "text/html" } }),
+    );
+    const res = await oauthHandler.fetch(
+      new Request("https://worker.test/callback?code=c&state=abc", { headers: { cookie: "__Host-wildcard_oauth=abc" } }),
+      env,
+    );
+    assert.equal(res.status, 502);
+    assert.equal(calls.length, 0);
+  });
 
   test("a userinfo provider without email_verified (GitHub) still works by login", async () => {
     const { env, calls } = oauthEnv({

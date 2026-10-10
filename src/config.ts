@@ -130,6 +130,18 @@ export function allowedNewHosts(env: Env): string[] {
 
 /** Secret names a runtime-added API may read. */
 const ADDED_SECRET_PATTERN = /^API_[A-Z0-9_]+$/;
+/** How a declarative credential is attached to a request, for comparing two manifests. */
+function sendsAs(auth: Exclude<ApiManifest["auth"], string>): string {
+  switch (auth.type) {
+    case "header":
+      return `header ${auth.header.toLowerCase()}${auth.prefix ? ` (prefix ${JSON.stringify(auth.prefix)})` : ""}`;
+    case "query":
+      return `query param ${auth.param}`;
+    default:
+      return auth.type;
+  }
+}
+
 /**
  * Bounds on what add_api will store. Generous for a real API description, but
  * every added manifest is re-read and re-validated on each request, and shown
@@ -204,18 +216,25 @@ export function validateAddition(env: Env, candidate: unknown, overlay: ConfigOv
     );
   }
   if (typeof api.auth === "object") {
-    const secret = api.auth.secret;
-    const clash = [...APIS, ...overlay.added].find(
-      (other) =>
-        typeof other.auth === "object" &&
-        other.auth.secret === secret &&
-        new URL(other.baseUrl).host.toLowerCase() !== url.host.toLowerCase(),
-    );
-    if (clash) {
-      throw new Error(
-        `auth.secret ${secret} is already sent to ${new URL(clash.baseUrl).host} by '${clash.id}'. A credential ` +
-          "goes only to the host it was issued for; name a new API_* secret for this one.",
-      );
+    const auth = api.auth;
+    const secret = auth.secret;
+    for (const other of [...APIS, ...overlay.added]) {
+      if (typeof other.auth !== "object" || other.auth.secret !== secret) continue;
+      if (new URL(other.baseUrl).host.toLowerCase() !== url.host.toLowerCase()) {
+        throw new Error(
+          `auth.secret ${secret} is already sent to ${new URL(other.baseUrl).host} by '${other.id}'. A credential ` +
+            "goes only to the host it was issued for; name a new API_* secret for this one.",
+        );
+      }
+      // Same host, but the credential must also travel the same way: moving a
+      // header secret into a query param, or into another header, changes where
+      // it ends up (URLs get logged and echoed back) without the owner's say.
+      if (sendsAs(other.auth) !== sendsAs(auth)) {
+        throw new Error(
+          `auth.secret ${secret} is already sent as ${sendsAs(other.auth)} by '${other.id}'. Reusing it must keep ` +
+            "that exact auth (same type, header or param); otherwise name a new API_* secret.",
+        );
+      }
     }
   }
 

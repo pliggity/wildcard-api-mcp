@@ -103,12 +103,44 @@ function denied(pattern: string, path: string): boolean {
   if (decoded === null) return true;
   const forms = new Set([path, decoded]);
   for (const form of [path, decoded]) {
-    const canonical = form.replace(/\/{2,}/g, "/");
-    forms.add(canonical);
-    if (canonical.length > 1) forms.add(canonical.replace(/\/+$/, ""));
+    // Servlet containers drop ';' path parameters before routing, so
+    // '/admin;x/users' reaches '/admin/users'.
+    for (const variant of [form, form.replace(/;[^/]*/g, "")]) {
+      const canonical = variant.replace(/\/{2,}/g, "/");
+      forms.add(variant);
+      forms.add(canonical);
+      if (canonical.length > 1) forms.add(canonical.replace(/\/+$/, ""));
+    }
   }
-  for (const form of forms) if (pathMatches(pattern, form)) return true;
+  // Some upstreams (IIS, ASP.NET) route case-insensitively, so '/Admin' must
+  // not slip past a rule written as '/admin'.
+  const lowerPattern = pattern.toLowerCase();
+  for (const form of forms) {
+    if (pathMatches(pattern, form) || pathMatches(lowerPattern, form.toLowerCase())) return true;
+  }
   return false;
+}
+
+/**
+ * Masks the API's credential, raw or URL-encoded, in text the upstream wrote
+ * (a redirect Location, an error body echoing the request). The model's context
+ * is not a safe place for a secret: anything injected into it could repeat the
+ * value somewhere else.
+ */
+function redactor(secrets: string[]): (text: string) => string {
+  const needles = new Set<string>();
+  for (const s of secrets) {
+    // A very short value would match all over ordinary text; anything this
+    // short isn't a real credential anyway.
+    if (s.length < 8) continue;
+    needles.add(s);
+    needles.add(encodeURIComponent(s));
+    needles.add(new URLSearchParams({ v: s }).toString().slice(2));
+  }
+  return (text) => {
+    for (const n of needles) text = text.split(n).join("[redacted]");
+    return text;
+  };
 }
 
 /** A caller-supplied max_chars, or the default when it isn't a usable number. */
@@ -202,6 +234,10 @@ export async function callApi(input: CallInput, env: Env): Promise<CallResult> {
   const baseUrl = new URL(base);
   const basePath = baseUrl.pathname.replace(/\/$/, "");
   const url = new URL(`${base}${path}${buildQuery(input.query, api.defaultQuery, auth.query)}`);
+  // What the model is shown: the same request with no credential in it. Built
+  // separately rather than masked afterwards, so nothing returned below is
+  // derived from a URL that ever held the secret.
+  const shown = new URL(`${base}${path}${buildQuery(input.query, api.defaultQuery)}`);
 
   // Belt and braces: the manifest's host is the only one this call may reach,
   // and only beneath its base path — '/v1' must not admit '/v1beta'.
@@ -231,17 +267,22 @@ export async function callApi(input: CallInput, env: Env): Promise<CallResult> {
   // redirect on an allowed host send this request (and, depending on the
   // runtime, its credential) to a host no manifest names.
   const res = await fetch(url.toString(), { method, headers, body: payload, redirect: "manual" });
+  // Only the upstream's own words (a Location, a body) can still carry the
+  // credential, if the API echoes it; those are masked before they're returned.
+  const secret = typeof api.auth === "object" ? env[api.auth.secret] : undefined;
+  const redact = redactor(typeof secret === "string" ? [secret] : []);
   const contentType = res.headers.get("content-type") ?? "unknown";
-  const head = `${res.status} ${res.statusText} · ${method} ${url.pathname}${url.search} · ${contentType}`;
+  const head = redact(`${res.status} ${res.statusText} · ${method} ${shown.pathname}${shown.search} · ${contentType}`);
 
   if (res.status >= 300 && res.status < 400) {
     await res.body?.cancel().catch(() => {});
     const location = res.headers.get("location");
     return {
       status: res.status,
-      text:
+      text: redact(
         `${head}\n\n[redirected${location ? ` to ${location}` : ""} — this server does not follow redirects. ` +
-        "If the new location is under the same API, call that path instead.]",
+          "If the new location is under the same API, call that path instead.]",
+      ),
     };
   }
   const mimeType = contentType.split(";")[0].trim().toLowerCase();
@@ -254,6 +295,7 @@ export async function callApi(input: CallInput, env: Env): Promise<CallResult> {
     if (!res.ok) {
       // An error carrying an image content-type is not a real image — show the
       // status rather than a body that won't render.
+      await res.body?.cancel().catch(() => {});
       return { status: res.status, text: `${head}\n\n[the API rejected this call; no image returned]` };
     }
     if (!RENDERABLE_IMAGE_TYPES.has(mimeType)) {
@@ -305,7 +347,7 @@ export async function callApi(input: CallInput, env: Env): Promise<CallResult> {
     : "";
   const hint = !res.ok ? "\n\n[the API rejected this call; the body above is its error]" : "";
 
-  return { status: res.status, text: `${head}\n\n${text || "(empty body)"}${tail}${hint}` };
+  return { status: res.status, text: `${head}\n\n${redact(text) || "(empty body)"}${tail}${hint}` };
 }
 
 export function describeError(err: unknown): string {
