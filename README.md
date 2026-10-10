@@ -167,9 +167,13 @@ Deliberate, and all in one place:
   than the one checked. The final URL is re-checked against the base before the
   request goes out. An MCP tool that accepts an arbitrary URL is an SSRF hole
   and a data-exfiltration path.
-- **Redirects are not followed.** A 3xx comes back to the model with its
-  `Location`, so an open redirect on an allowed host can't carry the request,
-  or its credential, somewhere else.
+- **Redirects are not followed by default.** A 3xx comes back to the model with
+  its `Location`, so an open redirect on an allowed host can't carry the
+  request, or its credential, somewhere else. When an API really does serve
+  from another host (Open Library covers redirect to `archive.org`), list those
+  hosts in the `ALLOWED_REDIRECT_HOSTS` var in `wrangler.jsonc`
+  (`archive.org,*.us.archive.org`). Then a GET is followed to them over https,
+  for at most five hops, and the hops carry no credential.
 - **Read-only by default.** A manifest must set `write: true` for anything other
   than GET.
 - **Deny rules** block specific method + path globs even on write-enabled APIs —

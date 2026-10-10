@@ -3,5 +3,9 @@
   "name": "wildcard-api-mcp",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
+  // Hosts call_api may follow a redirect to: GET only, https only, and no
+  // credential is sent. Comma-separated; "*.example.org" covers subdomains.
+  // Empty means every redirect is returned to the model unfollowed.
+  "vars": { "ALLOWED_REDIRECT_HOSTS": "" }
 }
