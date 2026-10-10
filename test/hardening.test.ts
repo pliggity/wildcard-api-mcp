@@ -195,6 +195,78 @@ describe("requests stay inside the manifest's base URL", () => {
     assert.match(r.text, /evil\.test/, "the model should see where it was redirected");
   });
 
+  describe("redirects to ALLOWED_REDIRECT_HOSTS", () => {
+    const REDIRECTS = { ALLOWED_REDIRECT_HOSTS: "archive.org,*.us.archive.org" };
+    // The real Open Library chain: covers → archive.org → ia*.us.archive.org.
+    function coverChain(final = "https://ia600505.us.archive.org/view_archive.php?file=1-M.jpg") {
+      stubFetch((url) => {
+        if (url.startsWith("https://api.test/")) return new Response(null, { status: 302, headers: { location: "https://archive.org/download/c/1-M.jpg" } });
+        if (url.startsWith("https://archive.org/")) return new Response(null, { status: 302, headers: { location: final } });
+        return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/jpeg" } });
+      });
+    }
+
+    test("a GET is followed through allowed hosts, without the credential", async () => {
+      const env = await envWithApi({}, REDIRECTS);
+      coverChain();
+      const r = await tool(env, "call_api", { api: "svc", path: "/x" });
+      assert.equal(seen.length, 3);
+      assert.equal(r.content.length, 2, r.text);
+      assert.equal((seen[0].init.headers as any).authorization, "Bearer sekrit");
+      for (const hop of seen.slice(1)) {
+        assert.equal((hop.init.headers as any).authorization, undefined, hop.url);
+        assert.equal(hop.init.redirect, "manual");
+      }
+    });
+
+    for (const [name, final] of [
+      ["a host off the list", "https://evil.test/x.jpg"],
+      ["a lookalike of a wildcard entry", "https://us.archive.org.evil.test/x.jpg"],
+      ["a lookalike suffix", "https://evilarchive.org/x.jpg"],
+      ["the bare domain of a wildcard entry", "https://us.archive.org/x.jpg"],
+      ["plain http", "http://ia600505.us.archive.org/x.jpg"],
+    ]) {
+      test(`stops at ${name}`, async () => {
+        const env = await envWithApi({}, REDIRECTS);
+        coverChain(final);
+        const r = await tool(env, "call_api", { api: "svc", path: "/x" });
+        assert.equal(seen.length, 2, seen.map((s) => s.url).join(", "));
+        assert.match(r.text, /not followed/);
+      });
+    }
+
+    test("nothing is followed when the list is empty", async () => {
+      const env = await envWithApi();
+      coverChain();
+      const r = await tool(env, "call_api", { api: "svc", path: "/x" });
+      assert.equal(seen.length, 1);
+      assert.match(r.text, /archive\.org/);
+    });
+
+    test("a write is never followed, even to an allowed host", async () => {
+      const env = await envWithApi({}, REDIRECTS);
+      coverChain();
+      const r = await tool(env, "call_api", { api: "svc", method: "POST", path: "/x", body: {} });
+      assert.equal(seen.length, 1);
+      assert.match(r.text, /only GET/);
+    });
+
+    test("a redirect loop stops", async () => {
+      const env = await envWithApi({}, REDIRECTS);
+      stubFetch(() => new Response(null, { status: 302, headers: { location: "https://archive.org/loop" } }));
+      const r = await tool(env, "call_api", { api: "svc", path: "/x" });
+      assert.ok(seen.length <= 6, String(seen.length));
+      assert.match(r.text, /exceeded/);
+    });
+
+    test("a credential echoed in an unfollowed Location is still redacted", async () => {
+      const env = await envWithApi({ auth: { type: "query", secret: "API_KEY", param: "key" } }, { ...REDIRECTS, API_KEY: "sekrit-query-value" });
+      stubFetch(() => new Response(null, { status: 302, headers: { location: "https://evil.test/?key=sekrit-query-value" } }));
+      const r = await tool(env, "call_api", { api: "svc", path: "/x" });
+      assert.doesNotMatch(r.text, /sekrit/);
+    });
+  });
+
   test("read-only APIs refuse every non-GET method", async () => {
     const env = await envWithApi({ write: false });
     seen = [];
