@@ -50,7 +50,7 @@ const TOKEN = "t".repeat(32);
 
 function makeEnv(extra: Record<string, unknown> = {}): any {
   return {
-    PERSONAL_MCP_TOKEN: TOKEN,
+    MCP_TOKEN: TOKEN,
     OAUTH_KV: new MemoryKV(),
     ALLOWED_NEW_HOSTS: "api.test,other.test",
     API_KEY: "sekrit",
@@ -360,7 +360,7 @@ describe("credentials", () => {
   test("runtime additions may not read a non-API_* secret", async () => {
     const env = makeEnv();
     const r = await tool(env, "add_api", {
-      manifest: manifest({ auth: { type: "bearer", secret: "PERSONAL_MCP_TOKEN" } }),
+      manifest: manifest({ auth: { type: "bearer", secret: "MCP_TOKEN" } }),
     });
     assert.equal(r.isError, true);
   });
@@ -397,9 +397,9 @@ describe("credentials", () => {
   });
 
   test("get_config flags every legacy token too short to be accepted", async () => {
-    const r = await tool(makeEnv({ PERSONAL_MCP_TOKEN_PHONE: "short" }), "get_config", {});
-    assert.match(r.text, /PERSONAL_MCP_TOKEN_PHONE set but IGNORED/);
-    assert.doesNotMatch(r.text, /PERSONAL_MCP_TOKEN set but IGNORED/);
+    const r = await tool(makeEnv({ MCP_TOKEN_PHONE: "short" }), "get_config", {});
+    assert.match(r.text, /MCP_TOKEN_PHONE set but IGNORED/);
+    assert.doesNotMatch(r.text, /MCP_TOKEN set but IGNORED/);
   });
 
   test("get_config and list_apis never print a secret's value", async () => {
@@ -515,14 +515,14 @@ describe("transport", () => {
 
   test("a legacy token too short to be a real secret is never accepted", async () => {
     const ping = { jsonrpc: "2.0", id: 1, method: "ping" };
-    const env = makeEnv({ PERSONAL_MCP_TOKEN: "abc" });
+    const env = makeEnv({ MCP_TOKEN: "abc" });
     const res = await worker.fetch(mcpRequest(ping, { authorization: "Bearer abc" }), env, ctx);
     assert.equal(res.status, 401);
   });
 
-  test("an empty secret named PERSONAL_MCP_TOKEN_* does not open the door to an empty token", async () => {
+  test("an empty secret named MCP_TOKEN_* does not open the door to an empty token", async () => {
     const ping = { jsonrpc: "2.0", id: 1, method: "ping" };
-    const env = makeEnv({ PERSONAL_MCP_TOKEN: "", PERSONAL_MCP_TOKEN_OLD: "" });
+    const env = makeEnv({ MCP_TOKEN: "", MCP_TOKEN_OLD: "" });
     const res = await worker.fetch(mcpRequest(ping, { authorization: "Bearer " }), env, ctx);
     assert.equal(res.status, 401);
   });

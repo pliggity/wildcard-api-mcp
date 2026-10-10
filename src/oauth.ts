@@ -343,7 +343,7 @@ export const oauthHandler = {
           server: "wildcard-api-mcp",
           transport: "streamable-http",
           endpoint: "POST /mcp",
-          auth: "OAuth (click Connect), or a PERSONAL_MCP_TOKEN* bearer/path token",
+          auth: "OAuth (click Connect), or an MCP_TOKEN* bearer/path token",
         }),
         { headers: { "content-type": "application/json" } },
       );

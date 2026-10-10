@@ -273,10 +273,10 @@ async function checkAuth(env: Env): Promise<string> {
 }
 
 /** Whether a named Worker secret is present — never its value. */
-/** Every PERSONAL_MCP_TOKEN* secret by name, flagging any too short to be accepted. */
+/** Every MCP_TOKEN* secret by name, flagging any too short to be accepted. */
 function legacyTokenStatus(env: Env): string {
   const names = Object.keys(env)
-    .filter((k) => k.startsWith("PERSONAL_MCP_TOKEN") && secretPresent(env, k))
+    .filter((k) => k.startsWith("MCP_TOKEN") && secretPresent(env, k))
     .sort();
   if (!names.length) return "not set";
   return names

@@ -22,10 +22,10 @@ export async function secretEquals(a: string, b: string): Promise<boolean> {
   return diff === 0;
 }
 
-/** Every secret named PERSONAL_MCP_TOKEN* that is long enough to be one. */
+/** Every secret named MCP_TOKEN* that is long enough to be one. */
 export function acceptedTokens(env: Env): string[] {
   return Object.entries(env)
-    .filter(([k, v]) => k.startsWith("PERSONAL_MCP_TOKEN") && typeof v === "string" && v.length >= MIN_TOKEN_LENGTH)
+    .filter(([k, v]) => k.startsWith("MCP_TOKEN") && typeof v === "string" && v.length >= MIN_TOKEN_LENGTH)
     .map(([, v]) => v as string);
 }
 

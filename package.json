@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "login": "wrangler login",
     "deploy": "npm run validate && wrangler deploy",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/test.mjs",
@@ -25,6 +26,6 @@
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^0.10.3"
   },
-  "description": "One self-hosted MCP server that fronts any REST API, with a fixed four-tool surface so adding an API costs no context.",
+  "description": "One self-hosted MCP server that fronts any REST API, with a fixed eight-tool surface so adding an API costs no context.",
   "license": "MIT"
 }

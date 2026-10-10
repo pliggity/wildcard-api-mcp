@@ -20,7 +20,7 @@ const run = promisify(execFile);
 const items = loadConfig({ required: false }).opItems ?? {};
 
 export const OP_REFS = {
-  mcpToken: { item: items.server, field: "PERSONAL_MCP_TOKEN" },
+  mcpToken: { item: items.server, field: "MCP_TOKEN" },
 };
 
 /** Returns the secret, or null if 1Password can't supply it for any reason. */

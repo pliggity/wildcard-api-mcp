@@ -91,10 +91,10 @@ export interface ApiManifest {
 export interface Env {
   /**
    * Shared secret guarding this server, accepted as a Bearer header or a URL
-   * path segment. Any additional secret named PERSONAL_MCP_TOKEN_* is accepted
+   * path segment. Any additional secret named MCP_TOKEN_* is accepted
    * too, so each client can hold its own token and be revoked on its own.
    */
-  PERSONAL_MCP_TOKEN: string;
+  MCP_TOKEN: string;
   [key: string]: unknown;
   /** The identity provider behind the Connect flow (src/oauth.ts). */
   OAUTH_AUTHORIZE_URL?: string;
