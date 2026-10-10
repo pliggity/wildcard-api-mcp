@@ -1,5 +1,5 @@
 import { AuthError, resolveAuth } from "./auth";
-import { getEffectiveApi } from "./config";
+import { getEffectiveApi, redirectHostAllowed } from "./config";
 import { pathMatches } from "./glob";
 import type { Env, HttpMethod } from "./types";
 
@@ -10,6 +10,8 @@ const MAX_PATH_LENGTH = 2_048;
 // it just bloats the response for nothing. Over the cap we return a note instead
 // of an image the model could never render.
 const MAX_IMAGE_BYTES = 5_000_000;
+// Generous for a CDN hop or two (Open Library covers take two).
+const MAX_REDIRECTS = 5;
 // The raster formats an MCP image block can carry to the model. SVG is
 // deliberately absent: it is text, and reads fine through the normal path.
 const RENDERABLE_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
@@ -263,28 +265,51 @@ export async function callApi(input: CallInput, env: Env): Promise<CallResult> {
     headers["content-type"] = "application/json";
   }
 
-  // Redirects are returned, never followed. Following one would let an open
-  // redirect on an allowed host send this request (and, depending on the
-  // runtime, its credential) to a host no manifest names.
-  const res = await fetch(url.toString(), { method, headers, body: payload, redirect: "manual" });
+  // Redirects are never followed by fetch itself. Following one blindly would
+  // let an open redirect on an allowed host send this request (and, depending
+  // on the runtime, its credential) to a host no manifest names. A GET may be
+  // followed by hand, but only over https to a host on ALLOWED_REDIRECT_HOSTS,
+  // and those hops carry no credential.
+  let res = await fetch(url.toString(), { method, headers, body: payload, redirect: "manual" });
   // Only the upstream's own words (a Location, a body) can still carry the
   // credential, if the API echoes it; those are masked before they're returned.
   const secret = typeof api.auth === "object" ? env[api.auth.secret] : undefined;
   const redact = redactor(typeof secret === "string" ? [secret] : []);
-  const contentType = res.headers.get("content-type") ?? "unknown";
-  const head = redact(`${res.status} ${res.statusText} · ${method} ${shown.pathname}${shown.search} · ${contentType}`);
-
-  if (res.status >= 300 && res.status < 400) {
-    await res.body?.cancel().catch(() => {});
+  let at = url;
+  const hops: string[] = [];
+  while (res.status >= 300 && res.status < 400) {
     const location = res.headers.get("location");
-    return {
-      status: res.status,
-      text: redact(
-        `${head}\n\n[redirected${location ? ` to ${location}` : ""} — this server does not follow redirects. ` +
-          "If the new location is under the same API, call that path instead.]",
-      ),
-    };
+    let next: URL | null = null;
+    try {
+      next = location ? new URL(location, at) : null;
+    } catch {
+      next = null;
+    }
+    const why =
+      !next ? "it gave no usable location"
+      : method !== "GET" ? "only GET redirects are followed"
+      : next.protocol !== "https:" ? "it is not https"
+      : !redirectHostAllowed(env, next.host) ? `${next.host} is not on ALLOWED_REDIRECT_HOSTS`
+      : hops.length >= MAX_REDIRECTS ? `it exceeded ${MAX_REDIRECTS} redirects`
+      : null;
+    await res.body?.cancel().catch(() => {});
+    if (why || !next) {
+      return {
+        status: res.status,
+        text: redact(
+          `${res.status} ${res.statusText} · ${method} ${shown.pathname}${shown.search}\n\n` +
+            `[redirected${location ? ` to ${location}` : ""} — not followed because ${why}. ` +
+            "If the new location is under the same API, call that path instead.]",
+        ),
+      };
+    }
+    hops.push(next.host);
+    at = next;
+    res = await fetch(next.toString(), { method: "GET", headers: { accept: headers.accept }, redirect: "manual" });
   }
+  const contentType = res.headers.get("content-type") ?? "unknown";
+  const via = hops.length ? ` · via ${hops.join(" → ")}` : "";
+  const head = redact(`${res.status} ${res.statusText} · ${method} ${shown.pathname}${shown.search}${via} · ${contentType}`);
   const mimeType = contentType.split(";")[0].trim().toLowerCase();
 
   // Images must never go through res.text(): decoding binary bytes as UTF-8

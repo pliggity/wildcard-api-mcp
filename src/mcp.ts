@@ -2,6 +2,7 @@ import { isConfigured, resolveAuth } from "./auth";
 import { callApi, describeError, type CallResult } from "./call";
 import {
   allowedNewHosts,
+  allowedRedirectHosts,
   applyOverlay,
   getEffectiveApi,
   isAdded,
@@ -321,6 +322,7 @@ async function getConfig(env: Env): Promise<string> {
   const server = [
     `storage: ${env.OAUTH_KV ? "KV bound" : "NO KV BOUND — set_config cannot save"}`,
     `hosts allowed for add_api: ${hosts.length ? hosts.join(", ") : "NONE — add_api is refused until ALLOWED_NEW_HOSTS is set"}`,
+    `hosts call_api may follow a redirect to: ${allowedRedirectHosts(env).join(", ") || "NONE — redirects are returned, not followed"}`,
     `KV encryption key: ${secretPresent(env, "KV_ENCRYPTION_KEY") ? "set" : "not set"}`,
     `legacy shared token: ${legacyTokenStatus(env)}`,
   ];
@@ -376,6 +378,7 @@ async function getConfigJson(env: Env): Promise<string> {
       server: {
         storageBound: !!env.OAUTH_KV,
         allowedNewHosts: allowedNewHosts(env),
+        allowedRedirectHosts: allowedRedirectHosts(env),
         kvEncryptionKeySet: secretPresent(env, "KV_ENCRYPTION_KEY"),
       },
       degraded: overlay.degraded ?? null,

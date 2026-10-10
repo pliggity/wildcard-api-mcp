@@ -477,11 +477,6 @@
         "method": "POST",
         "path": "/users/*/settings/forwardingAddresses",
         "reason": "Forwarding is a standing rule that survives this session; set it up in Gmail settings yourself."
-      },
-      {
-        "method": "*",
-        "path": "/users/*/settings/sendAs/**",
-        "reason": "Send-as identities affect outbound mail; change them in Gmail settings yourself."
       }
     ],
     "probe": {

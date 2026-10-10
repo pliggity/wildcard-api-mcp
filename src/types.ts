@@ -120,4 +120,10 @@ export interface Env {
    * the OAuth grant can add APIs, but only within it.
    */
   ALLOWED_NEW_HOSTS?: string;
+  /**
+   * Comma-separated hosts call_api may follow a redirect to ("*.example.org"
+   * for subdomains). A plain var in wrangler.jsonc: hostnames aren't secret,
+   * and a var is readable and diffable. Empty means no redirect is followed.
+   */
+  ALLOWED_REDIRECT_HOSTS?: string;
 }

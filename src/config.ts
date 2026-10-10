@@ -128,6 +128,27 @@ export function allowedNewHosts(env: Env): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Hosts call_api may follow a redirect to, from the ALLOWED_REDIRECT_HOSTS var
+ * in wrangler.jsonc. An entry is an exact hostname, or `*.example.org` for any
+ * subdomain of it (not example.org itself). Like ALLOWED_NEW_HOSTS it changes
+ * only from a terminal, so nothing holding the OAuth grant can widen it.
+ */
+export function allowedRedirectHosts(env: Env): string[] {
+  const raw = typeof env.ALLOWED_REDIRECT_HOSTS === "string" ? env.ALLOWED_REDIRECT_HOSTS : "";
+  return raw
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+export function redirectHostAllowed(env: Env, host: string): boolean {
+  const h = host.toLowerCase();
+  return allowedRedirectHosts(env).some((entry) =>
+    entry.startsWith("*.") ? h.endsWith(entry.slice(1)) && h.length > entry.length - 1 : h === entry,
+  );
+}
+
 /** Secret names a runtime-added API may read. */
 const ADDED_SECRET_PATTERN = /^API_[A-Z0-9_]+$/;
 /** How a declarative credential is attached to a request, for comparing two manifests. */
