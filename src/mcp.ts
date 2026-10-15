@@ -134,8 +134,8 @@ export const TOOLS = [
     name: "add_api",
     description:
       "Register a new API on this server, live, without a deploy. The manifest is the same shape as an " +
-      "entry in apis.json. The base URL's host must already be on the server's allowed list, which only " +
-      "changes from a terminal. Credentials are NOT set here — name a Worker secret (API_*) and set its " +
+      "entry in apis.json. The base URL must be https on a public hostname (no IP literals or local names); " +
+      "if the server owner has set an allowed-hosts list, it must also be on that list. Credentials are NOT set here — name a Worker secret (API_*) and set its " +
       "value separately; until then the API is registered but unusable.",
     inputSchema: {
       type: "object",
@@ -321,7 +321,7 @@ async function getConfig(env: Env): Promise<string> {
   const hosts = allowedNewHosts(env);
   const server = [
     `storage: ${env.OAUTH_KV ? "KV bound" : "NO KV BOUND — set_config cannot save"}`,
-    `hosts allowed for add_api: ${hosts.length ? hosts.join(", ") : "NONE — add_api is refused until ALLOWED_NEW_HOSTS is set"}`,
+    `hosts allowed for add_api: ${hosts.length ? hosts.join(", ") : "any public https host (set ALLOWED_NEW_HOSTS to lock this down)"}`,
     `hosts call_api may follow a redirect to: ${allowedRedirectHosts(env).join(", ") || "NONE — redirects are returned, not followed"}`,
     `KV encryption key: ${secretPresent(env, "KV_ENCRYPTION_KEY") ? "set" : "not set"}`,
     `legacy shared token: ${legacyTokenStatus(env)}`,
@@ -448,7 +448,9 @@ async function addApi(env: Env, manifest: unknown): Promise<string> {
   }
 
   const api = validateAddition(env, manifest, overlay);
-  await writeOverlay(env, { ...overlay, added: [...overlay.added, api] });
+  const secretHosts = { ...overlay.secretHosts };
+  if (typeof api.auth === "object") secretHosts[api.auth.secret] = new URL(api.baseUrl).host.toLowerCase();
+  await writeOverlay(env, { ...overlay, added: [...overlay.added, api], secretHosts });
 
   const secret = typeof api.auth === "object" ? api.auth.secret : null;
   return [

@@ -379,6 +379,76 @@ describe("credentials", () => {
     });
   }
 
+  describe("without ALLOWED_NEW_HOSTS", () => {
+    const open = () => makeEnv({ ALLOWED_NEW_HOSTS: undefined });
+
+    test("any public https host is accepted", async () => {
+      const r = await tool(open(), "add_api", { manifest: manifest({ baseUrl: "https://anything.example.org/v1", deny: undefined }) });
+      assert.equal(r.isError, false, r.text);
+    });
+
+    for (const baseUrl of [
+      "https://localhost/v1",
+      "https://app.localhost/v1",
+      "https://127.0.0.1/v1",
+      "https://10.0.0.5/v1",
+      "https://192.168.1.1/v1",
+      "https://169.254.169.254/latest/meta-data",
+      "https://metadata.google.internal/v1",
+      "https://[::1]/v1",
+      "https://[fd00::1]/v1",
+      "https://[::ffff:127.0.0.1]/v1",
+      "https://2130706433/v1",
+      "https://0x7f.0.0.1/v1",
+      "https://0177.0.0.1/v1",
+      "https://127.1/v1",
+      "https://intranet/v1",
+      "https://printer.local/v1",
+      "https://router.lan/v1",
+      "https://127.0.0.1.nip.io/v1",
+      "https://10.0.0.1.sslip.io/v1",
+      "https://localhost./v1",
+      "http://anything.example.org/v1",
+      "https://user:pw@anything.example.org/v1",
+    ]) {
+      test(`still refuses ${baseUrl}`, async () => {
+        const r = await tool(open(), "add_api", { manifest: manifest({ baseUrl, deny: undefined }) });
+        assert.equal(r.isError, true, r.text);
+      });
+    }
+
+    test("still enforces the API_* secret rule", async () => {
+      const r = await tool(open(), "add_api", {
+        manifest: manifest({ baseUrl: "https://anything.example.org/v1", auth: { type: "bearer", secret: "MCP_TOKEN" } }),
+      });
+      assert.equal(r.isError, true);
+    });
+
+    test("cannot reuse a live secret on a different host", async () => {
+      const env = open();
+      assert.equal((await tool(env, "add_api", { manifest: manifest({ baseUrl: "https://a.example.org", deny: undefined }) })).isError, false);
+      const r = await tool(env, "add_api", { manifest: manifest({ id: "thief", baseUrl: "https://evil.example.net", deny: undefined }) });
+      assert.equal(r.isError, true, r.text);
+    });
+
+    test("remove_api then re-add cannot walk a secret to a new host", async () => {
+      const env = open();
+      assert.equal((await tool(env, "add_api", { manifest: manifest({ baseUrl: "https://a.example.org", deny: undefined }) })).isError, false);
+      assert.equal((await tool(env, "remove_api", { api: "svc" })).isError, false);
+      const r = await tool(env, "add_api", { manifest: manifest({ id: "thief", baseUrl: "https://evil.example.net", deny: undefined }) });
+      assert.equal(r.isError, true, r.text);
+      assert.match(r.text, /stays bound/);
+      // The original host is still fine.
+      assert.equal((await tool(env, "add_api", { manifest: manifest({ baseUrl: "https://a.example.org", deny: undefined }) })).isError, false);
+    });
+  });
+
+  test("with ALLOWED_NEW_HOSTS set, a public host outside it is still refused", async () => {
+    const r = await tool(makeEnv(), "add_api", { manifest: manifest({ baseUrl: "https://anything.example.org/v1", deny: undefined }) });
+    assert.equal(r.isError, true);
+    assert.match(r.text, /not allowed/);
+  });
+
   test("add_api refuses a manifest too large to be a real API description", async () => {
     const endpoints = Array.from({ length: 5000 }, (_, i) => ({
       method: "GET",
