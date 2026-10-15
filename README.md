@@ -107,10 +107,15 @@ upstream API."
 immediately, stored in KV alongside the bundled ones. It is deliberately
 narrower than editing `apis.json`:
 
-- **The host must be pre-approved from a terminal.** Set the allowed hostnames
-  once with `npm run secret -- put ALLOWED_NEW_HOSTS` (comma-separated). Until
-  then every `add_api` call is refused, so nothing that merely holds a client
-  connection can point the server at a new host.
+- **Any public host works out of the box.** No allowlist, no redeploy. Hosts
+  that are IP literals (any spelling), single-label or local names
+  (`localhost`, `*.local`, `*.internal`, `*.lan`…), cloud metadata names, or
+  wildcard-DNS services like `nip.io` are always refused. This is a name check,
+  not a guarantee: a public name can still be made to resolve privately. Redirects are not
+  followed unless `ALLOWED_REDIRECT_HOSTS` lists the target.
+- **Optional lock-down.** To restrict `add_api` to hosts you've approved, set
+  them from a terminal with `npm run secret -- put ALLOWED_NEW_HOSTS`
+  (comma-separated). When set, any other host is refused.
 - **https only.**
 - **Declarative auth only** — `bearer`, `header`, `query`, `basic` or `"none"`.
   Code-backed auth flows are reserved for bundled APIs.
@@ -118,9 +123,20 @@ narrower than editing `apis.json`:
   added manifest can't name an unrelated secret and have it sent out. The value
   is never set through MCP: run `npm run secret -- put API_WEATHER_KEY`. Until
   it is set, the API is registered but unusable.
-- **One credential, one host.** An added manifest can't name a secret that
-  another manifest already sends to a different host.
+- **One credential, one host, for good.** A secret is bound to the first host
+  it's added with, and stays bound after `remove_api`. Reusing it for another
+  host is refused; name a new `API_*` secret instead.
 - **Bounded.** At most 50 added APIs, each manifest at most 128 KB.
+
+**The tradeoff of leaving `ALLOWED_NEW_HOSTS` unset:** whoever (or whatever)
+can call `add_api` can register an API at any public host and then send
+requests there with `call_api`. That includes anything a prompt-injected
+document or web page might talk the model into. It can't read your secrets:
+credentials are set only from a terminal, only `API_*` secrets are usable, and
+a secret never moves to a different host. But it *can* send data the model has
+seen to a host you didn't pick, and it can bind an unused `API_*` secret that
+you set later to its own host. If you'd rather not accept that, set
+`ALLOWED_NEW_HOSTS`.
 
 `remove_api` deletes a runtime-added API. Bundled APIs can't be removed that
 way; `set_config` with `disable` turns any API off, reversibly. Both settings
